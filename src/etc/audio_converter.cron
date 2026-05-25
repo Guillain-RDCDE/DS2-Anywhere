@@ -1,0 +1,12 @@
+# ds2-anywhere — auto-conversion of DS2/DSS files arriving in the pipeline.
+# Install:  cp audio_converter.cron /etc/cron.d/audio_converter
+# Rollback: rm /etc/cron.d/audio_converter
+#
+# Runs every minute. flock prevents overlap (if one pass is still running when
+# the next minute fires, the new one exits immediately). The script logs to
+# /var/log/audio_converter.log via `tee -a`; the cron stdout redirect goes to
+# /dev/null since we don't need duplicate output in the cron mail.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+* * * * * root /usr/bin/flock -n /tmp/audio_cron.lock /opt/conv-dss-ds2-to-mp3/src/bin/audio_cron.sh >/dev/null 2>&1

@@ -1,0 +1,30 @@
+[Unit]
+Description=ds2-anywhere — local HTTP daemon for DS2/DSS conversion (127.0.0.1:8765)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /opt/conv-dss-ds2-to-mp3/src/bin/http_server.mjs
+WorkingDirectory=/opt/conv-dss-ds2-to-mp3/src
+Restart=always
+RestartSec=5
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=audio-convert
+
+[Install]
+WantedBy=multi-user.target
+
+# Install:
+#   cp audio-convert.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now audio-convert
+#
+# Logs:
+#   journalctl -u audio-convert -f
+#
+# Rollback:
+#   systemctl disable --now audio-convert
+#   rm /etc/systemd/system/audio-convert.service

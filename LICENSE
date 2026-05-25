@@ -1,0 +1,56 @@
+MIT License
+
+Copyright (c) 2026 Guillain RDCDE
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+NOTICE — third-party components
+
+This project does not redistribute any third-party source code, but it
+depends on and integrates the following open-source projects. Their licenses
+apply to their respective binaries / packages when installed via the steps
+documented in this repository.
+
+  dss-codec (codec reverse-engineering)
+    Author:  Kieran Hirpara
+    URL:     https://github.com/hirparak/dss-codec
+    License: MIT
+
+  dss-codec-wasm (WASM build + npm packaging)
+    Author:  Gaspard Petit
+    URL:     https://github.com/gaspardpetit/dss-codec-wasm
+    License: MIT
+
+  lamejs (pure-JS MP3 encoder, used by the optional WASM chain)
+    Authors: zhuker, breezystack fork
+    URL:     https://github.com/breezystack/lamejs
+    License: LGPL-3.0
+
+  FFmpeg / libmp3lame (used by the native chain)
+    URL:     https://ffmpeg.org/
+    License: LGPL-2.1 / GPL-2.0 depending on build
+
+  jszip (used by the optional browser app)
+    URL:     https://github.com/Stuk/jszip
+    License: MIT / GPL-3.0 dual
+
+Full LICENSE files for each dependency are preserved within their respective
+node_modules / package directories when installed.

@@ -1,0 +1,121 @@
+#!/bin/bash
+# CLI wrapper — decode DS2/DSS to MP3 using the native chain.
+# Pipeline: dss-decode-native -> WAV -> ffmpeg (libmp3lame) -> MP3.
+# Argument-compatible with the older WASM-based wrapper (see core-wasm.mjs in lib/).
+
+set -u
+
+USAGE='Usage:
+  conv-dss-ds2-to-mp3 <file.ds2|.dss> [output.mp3]
+  conv-dss-ds2-to-mp3 --inspect <file>
+  conv-dss-ds2-to-mp3 --password=<pwd> <file> [output.mp3]
+  conv-dss-ds2-to-mp3 --bitrate=<kbps> <file> [output.mp3]   (default 64)
+  conv-dss-ds2-to-mp3 -h | --help
+
+Exit codes:
+  0 success | 1 error | 2 usage | 3 encrypted (password required)'
+
+NATIVE=/usr/local/bin/dss-decode-native
+FFMPEG=/usr/bin/ffmpeg
+
+die() { local code=$1; shift; printf '%s\n' "$*" >&2; exit "$code"; }
+
+# Encryption detection via magic bytes (see upstream demux/ds2.rs + crypto/ds2_encrypted.rs).
+get_encryption() {
+  local hdr
+  hdr=$(head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+  case "$hdr" in
+    03647332|03647373) echo "none" ;;    # \x03ds2  or  \x03dss
+    03656e63)          echo "ds2_aes" ;; # \x03enc
+    *)                 echo "unknown" ;;
+  esac
+}
+
+# Parse argv
+inspect_mode=0
+password=""
+bitrate=64
+positional=()
+
+for a in "$@"; do
+  case "$a" in
+    -h|--help)        echo "$USAGE"; exit 0 ;;
+    --inspect)        inspect_mode=1 ;;
+    --password=*)     password="${a#--password=}" ;;
+    --bitrate=*)
+      bitrate="${a#--bitrate=}"
+      [[ "$bitrate" =~ ^[0-9]+$ ]] && [ "$bitrate" -ge 16 ] && [ "$bitrate" -le 320 ] \
+        || die 2 "Invalid bitrate (16..320): $a" ;;
+    --*)              die 2 "Unknown option: $a" ;;
+    *)                positional+=("$a") ;;
+  esac
+done
+
+[ "${#positional[@]}" -ge 1 ] && [ "${#positional[@]}" -le 2 ] || die 2 "$USAGE"
+
+input="${positional[0]}"
+[ -f "$input" ] || die 1 "File not found: $input"
+
+# Detect format/encryption/rate via --info + magic bytes
+encryption=$(get_encryption "$input")
+info_out=$("$NATIVE" --info "$input" 2>&1)
+info_exit=$?
+fmt=""; rate=""
+if [ $info_exit -eq 0 ]; then
+  # Format example: "/path/file.DS2: Ds2Qp, native rate 16000 Hz"
+  fmt=$(printf '%s' "$info_out" | awk -F'[:,]' 'NR==1 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print tolower($2)}')
+  # Normalize: "Ds2Qp" -> "ds2_qp", "Ds2Sp" -> "ds2_sp", "DssSp" -> "dss_sp"
+  case "$fmt" in
+    ds2qp) fmt="ds2_qp" ;;
+    ds2sp) fmt="ds2_sp" ;;
+    dsssp) fmt="dss_sp" ;;
+  esac
+  rate=$(printf '%s' "$info_out" | grep -oE 'native rate [0-9]+' | awk '{print $3}')
+fi
+
+if [ "$inspect_mode" = 1 ]; then
+  size=$(stat -c%s "$input")
+  echo "format     : $fmt"
+  echo "encryption : $encryption"
+  echo "native rate: ${rate} Hz"
+  echo "size       : ${size} bytes"
+  exit 0
+fi
+
+# Conversion
+if [ "$encryption" != "none" ] && [ -z "$password" ]; then
+  die 3 "File is encrypted ($encryption). Re-run with --password=<pwd>."
+fi
+
+output="${positional[1]:-${input%.*}.mp3}"
+tmp_wav=$(mktemp --suffix=.wav -t conv-dss.XXXXXX)
+trap 'rm -f "$tmp_wav"' EXIT
+
+t0=$(date +%s%3N)
+
+# Phase 1: decode DS2/DSS -> WAV (native rate, mono 16-bit)
+pwd_arg=()
+[ -n "$password" ] && pwd_arg=(--password "$password")
+if ! err=$("$NATIVE" -O "$tmp_wav" "${pwd_arg[@]}" "$input" 2>&1); then
+  if printf '%s' "$err" | grep -qiE 'encrypt|password'; then
+    die 3 "Encrypted file, password invalid or required: $err"
+  fi
+  die 1 "Decode failed: $err"
+fi
+[ -s "$tmp_wav" ] || die 1 "Empty WAV produced"
+
+# Phase 2: encode MP3 via ffmpeg/libmp3lame (keep native sample rate, mono, requested bitrate)
+if ! err=$("$FFMPEG" -y -loglevel error -i "$tmp_wav" -ac 1 -c:a libmp3lame -b:a "${bitrate}k" "$output" 2>&1); then
+  die 1 "MP3 encode failed: $err"
+fi
+[ -s "$output" ] || die 1 "Empty MP3 produced"
+
+t1=$(date +%s%3N)
+ms=$((t1 - t0))
+size_mb=$(awk -v b="$(stat -c%s "$output")" 'BEGIN { printf "%.2f", b/1024/1024 }')
+# Audio duration from WAV (precise and free)
+dur=$(/usr/bin/ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$tmp_wav" 2>/dev/null)
+dur_min=$(awk -v d="${dur:-0}" 'BEGIN { printf "%.1f", d/60 }')
+
+echo "[$fmt ${rate}Hz, ${dur_min}min] $output  OK  (${size_mb} Mo en ${ms} ms)"
+exit 0
