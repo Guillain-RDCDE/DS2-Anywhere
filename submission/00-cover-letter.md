@@ -75,9 +75,16 @@ https://github.com/hirparak/dss-codec/blob/master/dss-codec/CODEC_SPECIFICATION.
 
 It includes byte-for-byte verification against the output of the
 official Olympus DirectShow filter, a reference Python decoder, and a
-reference Rust decoder. Patrick's C and Hirpara's Rust are two
-independent ports of the same published specification (no shared
-source).
+reference Rust decoder.
+
+The CELP algorithm in libavcodec/ds2.c (decode loops, pitch synthesis
+filter, reflection-to-LPC conversion, frame parsing) was implemented
+from the FFmpeg trac #6091 specification text by Patrick Domack. The
+numerical quantization tables (SP and QP reflection codebooks, pitch
+and excitation gain tables, pulse amplitude tables — ~4400 values
+total) are sourced from Hirpara's reference Rust implementation,
+which originally extracted them from the Olympus DssDecoder.dll via
+Ghidra. Both the algorithm and the tables are MIT-licensed.
 
 Validation
 ----------

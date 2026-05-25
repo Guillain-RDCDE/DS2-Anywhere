@@ -66,11 +66,16 @@ it during review and we will handle it pre-upload.
 
 ## Validation: C decoder vs Rust reference
 
-This is the comparison the FATE checksum will exercise. The C decoder
-(Patrick Domack's patch) and the Rust decoder (Kieran Hirpara's
-reference for the published specification) are two independent ports
-of the same spec. Both decode the FATE sample successfully; the delta
-between them is rounding noise.
+This is the comparison the FATE checksum will exercise. The C
+decoder (Patrick Domack's patch, in this submission) implements the
+CELP algorithm from the FFmpeg trac #6091 specification text and
+shares the numerical codebook tables with Hirpara's Rust (both MIT-
+licensed; tables originally extracted from the Olympus DLLs via
+Ghidra). The two decoders therefore exercise the same tables but
+run different algorithmic code paths — making a byte-for-byte match
+between them a meaningful test of Patrick's algorithm. Both decode
+the FATE sample successfully; the delta between them is rounding
+noise.
 
 **Dataset: FATE sample (`fate/sample-qp.ds2`), 37.0 s @ 16 kHz**
 

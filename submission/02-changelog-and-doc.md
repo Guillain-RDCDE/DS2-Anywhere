@@ -68,8 +68,12 @@ files, only the one-line description changing (`decoder` vs `demuxer`).
  * Copyright (c) 2026 Patrick Domack
  *
  * Based on a codec specification reverse-engineered from the Olympus
- * DLLs (DssDecoder.dll, dss32.dll) via clean-room Ghidra analysis by
- * Kieran Hirpara (https://github.com/hirparak/dss-codec, MIT, 2026).
+ * DLLs (DssDecoder.dll, dss32.dll) via Ghidra by Kieran Hirpara
+ * (https://github.com/hirparak/dss-codec, MIT, 2026). The CELP
+ * algorithm in this file was implemented from the specification
+ * text in FFmpeg trac #6091; the quantization tables (reflection
+ * codebooks, pitch and excitation gains, pulse amplitudes) are
+ * sourced from Hirpara's reference implementation.
  *
  * Submitted to FFmpeg by Guillain d'Erceville on behalf of Patrick
  * Domack (DS2-Anywhere project,

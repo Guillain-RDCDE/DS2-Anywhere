@@ -1,4 +1,4 @@
-From d33905726577b74bf0ca194ad9710d0f8ab8f1de Mon Sep 17 00:00:00 2001
+From f2bf3394098a5380fd6b35fd98fc14e044f4d0ed Mon Sep 17 00:00:00 2001
 From: Patrick Domack <patrickdk77@users.noreply.github.com>
 Date: Mon, 25 May 2026 19:38:24 +0200
 Subject: [PATCH] avcodec, avformat: add Olympus DS2 decoder and demuxer
@@ -17,19 +17,26 @@ codebooks and frame structures; the demuxer added here only accepts
 the DS2 magic (\x03ds2), so DSS files continue to route to the
 existing dss_sp decoder.
 
-Validation against the Hirpara reference Rust decoder (the spec
-author): SNR 66.4 dB on a 37s test sample; +/-1 LSB rounding noise
-is the entire delta (591360 samples compared; 99.98% differ by at
-most one quantization step, 1 sample by 3, max).
+Validation against the Hirpara reference Rust decoder: SNR 66.4 dB on
+a 37s test sample; +/-1 LSB rounding noise is the entire delta
+(591360 samples compared; 99.98% differ by at most one quantization
+step, 1 sample by 3, max).
 
 Closes Trac ticket #6091.
 
-Based on the codec specification reverse-engineered from the Olympus
-DLLs (DssDecoder.dll, dss32.dll) via clean-room Ghidra analysis by
-Kieran Hirpara (https://github.com/hirparak/dss-codec, MIT, 2026).
+Based on a codec specification reverse-engineered from the Olympus
+DLLs (DssDecoder.dll, dss32.dll) via Ghidra by Kieran Hirpara
+(https://github.com/hirparak/dss-codec, MIT, 2026). The CELP
+algorithm in libavcodec/ds2.c was implemented from the specification
+text in FFmpeg trac #6091 by Patrick Domack; the numerical
+quantization tables (reflection codebooks, pitch and excitation
+gains, pulse amplitudes) are sourced from Hirpara's reference
+implementation, which originally extracted them from the Olympus
+codebooks via Ghidra. Both the algorithm and the tables are
+MIT-licensed.
 
-Patrick Domack relicensed this code under MIT / public-domain terms
-explicitly for upstream FFmpeg merge, see:
+Patrick Domack relicensed his contribution under MIT / public-domain
+terms explicitly for upstream FFmpeg merge, see:
 https://github.com/hirparak/dss-codec/issues/1
 
 Signed-off-by: Guillain d'Erceville <guillain@poulpe.us>

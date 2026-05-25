@@ -26,7 +26,7 @@ The WASM build was our first integration target. We later switched to the native
 
 ### Patrick Domack — FFmpeg C port ([gist `330dd3f5…`](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9))
 
-The hand-written C port of the DS2 decoder + demuxer for FFmpeg — `libavcodec/ds2.c` (982 lines) + `libavformat/ds2.c` (369 lines), independent of Hirpara's Rust but following the same published specification. Posted as a gist in March 2026, then explicitly relicensed under MIT / public-domain terms in [hirparak/dss-codec#1](https://github.com/hirparak/dss-codec/issues/1) for upstream inclusion in FFmpeg.
+The hand-written C port of the DS2 decoder + demuxer for FFmpeg — `libavcodec/ds2.c` (982 lines) + `libavformat/ds2.c` (369 lines). The CELP algorithm (decode loops, pitch synthesis filter, frame parsing, demuxer) was implemented from the specification text in [FFmpeg trac #6091](https://trac.ffmpeg.org/ticket/6091); the numerical quantization tables (reflection codebooks, pitch and excitation gains, pulse amplitudes — ~4400 values) are sourced from Hirpara's reference Rust implementation, which originally extracted them from the Olympus `DssDecoder.dll` via Ghidra. Both the algorithm and the tables are MIT-licensed. Posted as a gist in 2026-03, explicitly relicensed under MIT / public-domain terms for upstream FFmpeg merge in [hirparak/dss-codec#1](https://github.com/hirparak/dss-codec/issues/1).
 
 This is the work that closes the loop: once Patrick's C lands upstream, **DS2 / DS2 Pro becomes a first-class audio format in any FFmpeg build, anywhere**. No more decoder bundling, no more native binary in our Dockerfile, no more "first install this dependency". Just `ffmpeg -i recording.ds2 out.wav`.
 
