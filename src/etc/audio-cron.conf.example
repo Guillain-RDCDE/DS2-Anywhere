@@ -1,4 +1,10 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034
 # DS2-Anywhere — audio_cron.sh configuration file.
+#
+# (The shellcheck directives above tell the linter (a) this file is sourced by
+# bash, not run standalone, and (b) the "unused variable" warnings are expected
+# since these variables are consumed by audio_cron.sh after sourcing.)
 #
 # Copy this to /etc/conv-dss-ds2-to-mp3/audio-cron.conf and edit.
 # The cron sources this file at start ; any variable you set here overrides
