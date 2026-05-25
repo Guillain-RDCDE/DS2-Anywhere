@@ -2,7 +2,7 @@
 
 > How we wrapped the Rust codec into a production transcription pipeline with three entry points, two safety nets, and zero downtime. The engineering recipe.
 
-The codec ([Hirpara's work](01-the-reverse-engineering.md)) is the hard part — but a CLI binary on a disk isn't a production system. You need it to run *automatically*, *recover from failures*, *handle the weird files*, and *fit the existing pipeline* without breaking what was already working.
+The codec ([Hirpara's work](01-reverse-engineering.md)) is the hard part — but a CLI binary on a disk isn't a production system. You need it to run *automatically*, *recover from failures*, *handle the weird files*, and *fit the existing pipeline* without breaking what was already working.
 
 This chapter is how.
 
@@ -250,7 +250,7 @@ We didn't burn the bridges. Every step of the migration could be undone in a sin
 
 ---
 
-Next: **[03 — The validation campaign](03-the-validation-campaign.md)** — how we proved on 35 real-world files that the new chain is at least as good as Switch.
+Next: **[03 — The validation campaign](03-validation-campaign.md)** — how we proved on 35 real-world files that the new chain is at least as good as Switch.
 
 ---
 

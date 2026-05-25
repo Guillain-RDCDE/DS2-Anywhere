@@ -1,4 +1,4 @@
-# ds2-anywhere
+# DS2-Anywhere
 
 > Decode Olympus DSS/DS2 dictation files anywhere — pure CLI, no Windows, no GUI, no commercial software. A production integration recipe for a format that was locked for ten years. 🔓
 
@@ -71,7 +71,7 @@ Encrypted DS2 with password:
 conv-dss-ds2-to-mp3 --password=mypwd recording.ds2
 ```
 
-Full install + cron + web UI setup: [docs/02-the-integration.md](docs/02-the-integration.md).
+Full install + cron + web UI setup: [docs/02-integration.md](docs/02-integration.md).
 
 ## Real-world numbers
 
@@ -92,7 +92,7 @@ Validation campaign on **35 real dictation files** (32 DS2 QP + 3 DSS SP) — pr
 If you have…
 
 - **5 minutes** → just read this README.
-- **20 minutes** → [docs/01-the-reverse-engineering.md](docs/01-the-reverse-engineering.md) — the genius part.
+- **20 minutes** → [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md) — the genius part.
 - **60 minutes** → all of [docs/](docs/), in order. From "impossible for ten years" to "production in a weekend".
 
 ## Credits — proper order

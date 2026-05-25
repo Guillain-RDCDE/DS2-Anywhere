@@ -61,11 +61,11 @@ After switching to the native binary + ffmpeg (see [docs/04](../docs/04-wasm-vs-
 
 The dominant factor in the speedup is the MP3 encoder, not the decoder — `lamejs` (pure JS) is ~50× slower than `libmp3lame` (C with hand-tuned SIMD).
 
-## Whisper A/B — Switch.exe vs ds2-anywhere
+## Whisper A/B — Switch.exe vs DS2-Anywhere
 
 Single-file comparison: same source DS2 (cmd `2940662`, 31.8 min legal dictation), converted via both chains, both MP3s sent to the same Whisper API (default parameters).
 
-| Metric | Switch.exe chain (commercial Windows) | ds2-anywhere native chain |
+| Metric | Switch.exe chain (commercial Windows) | DS2-Anywhere native chain |
 |---|---|---|
 | HTTP response | 200 | 200 |
 | Whisper segments | 95 | 92 |

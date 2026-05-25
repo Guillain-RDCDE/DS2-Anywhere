@@ -228,7 +228,7 @@ The upstream codec is **MIT licensed**. The spec is published. Olympus has been 
 
 ---
 
-Next chapter: **[02 — The integration](02-the-integration.md)**. How we wrapped this Rust codec into a production transcription pipeline that processes real-world dictations daily, with three entry points (CLI, cron, web), and what we learned in the process.
+Next chapter: **[02 — The integration](02-integration.md)**. How we wrapped this Rust codec into a production transcription pipeline that processes real-world dictations daily, with three entry points (CLI, cron, web), and what we learned in the process.
 
 ---
 

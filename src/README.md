@@ -49,7 +49,7 @@ find src/ -type f \( -name '*.sh' -o -name '*.mjs' -o -name '*.php' -o -name '*.
 
 ## Installation walkthrough
 
-Detailed in [docs/02-the-integration.md](../docs/02-the-integration.md). Short version:
+Detailed in [docs/02-integration.md](../docs/02-integration.md). Short version:
 
 ```bash
 # 1. Install Node.js 18+ on the host

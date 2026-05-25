@@ -14,7 +14,7 @@ The reverse-engineering of the Olympus DSS / DS2 codec, published **February 202
 
 Before this work, DS2 was undecodable on any open-source stack. After this work, anyone can integrate DS2 audio into a Linux pipeline. The entire premise of this repo rests on it.
 
-The full story of how this work was done is in [docs/01-the-reverse-engineering.md](docs/01-the-reverse-engineering.md).
+The full story of how this work was done is in [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md).
 
 ### Gaspard Petit — [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm)
 
@@ -63,7 +63,7 @@ If you're using this repo as a starting point for your own integration, the appr
 ```markdown
 - Codec: [hirparak/dss-codec](https://github.com/hirparak/dss-codec) (MIT)
 - WASM build: [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) (MIT)
-- Integration patterns: [Guillain-RDCDE/ds2-anywhere](https://github.com/Guillain-RDCDE/ds2-anywhere) (MIT)
+- Integration patterns: [Guillain-RDCDE/DS2-Anywhere](https://github.com/Guillain-RDCDE/DS2-Anywhere) (MIT)
 ```
 
 The codec authors are non-negotiable. Mentioning us is optional but appreciated.

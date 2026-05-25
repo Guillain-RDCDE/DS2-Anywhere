@@ -2,7 +2,7 @@
 
 > What running a DS2 pipeline on Windows GUI software actually looks like in production. Not the codec problem — the *operations* problem.
 
-The previous chapter ([01 — the reverse engineering](01-the-reverse-engineering.md)) tells you why no one could decode DS2 on Linux for ten years. This chapter tells you why that mattered *operationally* — what the duct-tape solution looked like, and why it kept breaking.
+The previous chapter ([01 — the reverse engineering](01-reverse-engineering.md)) tells you why no one could decode DS2 on Linux for ten years. This chapter tells you why that mattered *operationally* — what the duct-tape solution looked like, and why it kept breaking.
 
 If your production system ingests DS2 files and you're not on Windows, you'll recognize this. If you've never had to wrangle a Windows VM in a Linux server farm, this is a glimpse of what it looked like before February 2026.
 
@@ -120,7 +120,7 @@ The next chapters show how we did it.
 
 ---
 
-Next: **[01 — The reverse engineering](01-the-reverse-engineering.md)** (how Hirpara made this possible) or jump to **[02 — The integration](02-the-integration.md)** (how we wired it into production).
+Next: **[01 — The reverse engineering](01-reverse-engineering.md)** (how Hirpara made this possible) or jump to **[02 — The integration](02-integration.md)** (how we wired it into production).
 
 ---
 
