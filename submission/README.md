@@ -1,4 +1,4 @@
-# submission/
+﻿# submission/
 
 > Pre-submission staging for the upstream FFmpeg patch
 > (`ffmpeg-devel@ffmpeg.org`). **Nothing here has been sent yet.** This
@@ -19,7 +19,7 @@
 | Mail body ready to copy-paste | [`patches/email-body.txt`](patches/email-body.txt) + [`patches/email-subject.txt`](patches/email-subject.txt) (see [`patches/README.md`](patches/README.md) for procedure) |
 | Cover letter (long form, for the repo) | [`00-cover-letter.md`](00-cover-letter.md) — body fenced between `BEGIN MAIL BODY` / `END MAIL BODY` |
 | Changelog + doc + header entries drafted | [`02-changelog-and-doc.md`](02-changelog-and-doc.md) |
-| Patch sent to `ffmpeg-devel` | Pending — see [`patches/README.md`](patches/README.md) for the manual copy-paste send procedure |
+| Patch sent to `ffmpeg-devel` | **Sent 2026-05-25 21:35 CEST** — [public archive (lore)](https://lists.ffmpeg.org/lore/ffmpeg-devel/20260525193532.1845986-1-guillain@poulpe.us/T/#u). Message-Id `<20260525193532.1845986-1-guillain@poulpe.us>`. Now in review (typically days to weeks). |
 
 [reli]: https://github.com/hirparak/dss-codec/issues/1
 
