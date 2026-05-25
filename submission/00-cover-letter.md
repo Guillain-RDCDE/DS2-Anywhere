@@ -1,132 +1,203 @@
 # Cover letter — `ffmpeg-devel` submission
 
-> Draft, not sent. Will be the body of the `[PATCH 0/N]` email accompanying the patch series to `ffmpeg-devel@ffmpeg.org`. Plain text, no Markdown, ~80 char lines (mailing-list convention).
-
----
+> Draft, not sent. Will be the body of the `[PATCH]` email accompanying
+> the patch to `ffmpeg-devel@ffmpeg.org`. Plain text, no Markdown,
+> ASCII only, lines wrapped at 75 cols (mailing-list convention).
+>
+> **The mail body starts at the `>8` marker below and ends at the next one.**
 
 ```
-Subject: [PATCH 0/2] avcodec, avformat: add Olympus DSS/DS2 codec and demuxer
+----8<-------- BEGIN MAIL BODY --------8<----
+Subject: [PATCH] avcodec, avformat: add Olympus DS2 decoder and demuxer
 
 Hi,
 
-This patchset adds support for the Olympus Digital Speech Standard (DSS)
-and DSS Pro (DS2) proprietary audio formats — the formats used by Olympus
-dictaphone devices (DS-, DM-, DPM-series, used heavily in legal, medical,
-and journalistic dictation workflows).
+This patch adds support for the Olympus Digital Speech Standard Pro
+(DS2) audio format, used by Olympus DS-, DM-, and DPM-series dictation
+recorders. It is the successor to the older DSS format already supported
+in FFmpeg via libavcodec/dss_sp.c and libavformat/dss.c (Oleksij Rempel,
+2014). The two formats share a similar 0x600 header layout but use
+different codebooks and frame structures; this patch is complementary
+to the existing DSS support, not a replacement.
 
-Trac ticket #6091 ("Add DS2 codec support") has been open since
-October 2017. This series closes it.
+Trac ticket #6091 ("support ds2 audio (dss pro audio) file format") has
+been open since October 2017. This patch closes it.
 
-  Patch 1/2: libavformat/ds2.c
-             demuxer for the .ds2 container, ~370 lines
-  Patch 2/2: libavcodec/ds2.c
-             CELP decoder, ~980 lines, handles both SP (12 kHz)
-             and QP (16 kHz) modes plus the older DSS SP format
+The patch is shipped as a single atomic commit (decoder + demuxer
+together) rather than split. The two pieces are functionally
+inseparable: the demuxer hardcodes AV_CODEC_ID_DS2 from the decoder
+patch, so splitting would create an intermediate state where the tree
+does not build. Combined size:
+
+  - libavcodec/ds2.c          982 lines (new file, CELP decoder
+                              handling both DS2 modes: SP 12 kHz and
+                              QP 16 kHz)
+  - libavformat/ds2.c         369 lines (new file, demuxer for the
+                              .ds2 container)
+  - registration boilerplate   12 lines across Makefile / allcodecs.c
+                              / allformats.c / codec_desc.c /
+                              codec_id.h
+
+Total: 1363 insertions across 8 files.
+
+The patch applies cleanly to master HEAD (commit 69bdb05, 2026-05-25);
+make passes; the new decoder + demuxer build out of the box with
+--enable-decoder=ds2 --enable-demuxer=ds2.
 
 Authorship and licensing
 ------------------------
 
-The C implementation is by Patrick Domack <patrickdk77>, originally
-posted as a github gist in March 2026, and explicitly relicensed under
-MIT / public-domain terms for inclusion in FFmpeg (see attribution chain
-at the link below). I am submitting on Patrick's behalf with his explicit
-permission; he is happy to answer codec-internals questions if reviewers
-ping him but prefers to stay off the mailing list.
+The C implementation is by Patrick Domack (@patrickdk77 on GitHub),
+originally posted as a gist on 2026-03 and updated for current master.
+Gist URL:
+
+  https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9
+
+Patrick has explicitly relicensed the code under MIT / public-domain
+terms for inclusion in FFmpeg. The relicensing grant is recorded
+publicly in:
+
+  https://github.com/hirparak/dss-codec/issues/1
+
+He has asked to stay off the mailing list but remains available for
+technical questions via that same issue thread. I am submitting on his
+behalf.
 
 The codec specification used as the basis for the implementation was
-reverse-engineered from the Olympus DLLs (DssDecoder.dll + dss32.dll)
-using Ghidra, by Kieran Hirpara <hirparak>, released February 2026 at
-https://github.com/hirparak/dss-codec (MIT). The specification document
-is at:
+reverse-engineered from the Olympus DLLs (DssDecoder.dll and dss32.dll)
+via Ghidra by Kieran Hirpara, released February 2026 as MIT-licensed:
 
-  https://github.com/hirparak/dss-codec/blob/master/dss-codec/CODEC_SPECIFICATION.md
+  https://github.com/hirparak/dss-codec
+
+The specification document is at:
+
+https://github.com/hirparak/dss-codec/blob/master/dss-codec/CODEC_SPECIFICATION.md
 
 It includes byte-for-byte verification against the output of the
 official Olympus DirectShow filter, a reference Python decoder, and a
-reference Rust decoder. Both Patrick's C and Kieran's Rust are
-independent implementations of the same specification.
+reference Rust decoder. Patrick's C and Hirpara's Rust are two
+independent ports of the same published specification (no shared
+source).
 
 Validation
 ----------
 
-  - The patch applies cleanly to current master (last tested against
-    commit XXXXXXX on YYYY-MM-DD, no rebase needed).
+Decoder correctness was verified by comparing C output against
+Hirpara's reference Rust on the FATE sample shipped with this series:
 
-  - The C decoder is byte-for-byte equivalent to Kieran's reference
-    Rust within ±1 LSB rounding noise on a 31-minute real-world DS2 QP
-    recording. Specifically: 49.8% of samples differ by exactly ±1 LSB
-    (float-to-int16 ordering noise), 0.003% by ±2, none above. RMS
-    error 0.71 against an RMS signal of 1577 (SNR 67 dB), well below
-    the audibility threshold for speech codecs.
+  PCM samples compared:  591,360 (37.0 s @ 16 kHz)
+  exact match:           49.59 %
+  diff = +/-1 LSB:       50.39 %  (float-to-int16 ordering noise)
+  diff = +/-2 LSB:        0.02 %
+  diff >= 3:              1 sample (max abs diff = 3)
+  RMS error:              0.71
+  SNR:                    66.4 dB
 
-  - End-to-end transcription quality verified against the commercial
-    NCH Switch decoder (the existing Windows-only reference): identical
-    speech-to-text output from Whisper on identical input, measured
-    across 35 real-world production dictation files. Full methodology
-    at https://github.com/Guillain-RDCDE/DS2-Anywhere
+The +/-1 LSB delta is inaudible: each differing sample is off by at
+most one int16 quantization step. The two implementations follow the
+same specification and produce equivalent output within rounding noise.
+
+Beyond the FATE sample, the decoder has been exercised on a 31-minute
+production DS2 QP recording and on a 35-file corpus of in-the-wild DS2
+and DSS files from a production dictation pipeline. Decode succeeds
+on 35/35; Whisper transcription run on the C-decoded output is
+coherent with transcription run on the output of the reference
+proprietary Windows decoder (NCH Switch). Full methodology and the
+sanitized per-file results are at:
+
+  https://github.com/Guillain-RDCDE/DS2-Anywhere
 
 FATE
 ----
 
-  - One sample added to fate-suite: a 30-second public-domain reading
-    recorded on an Olympus DS-series device, encoded in DS2 QP and
-    DSS SP modes.
-  - Reference PCM checksums for both modes added to fate/audio.mak.
+  - One DS2 QP sample is included for upload to
+    samples.ffmpeg.org/A-codecs/DS2/: a 37-second file (132,608 bytes,
+    md5 23eab82c3fc093c44ef4eb45ac35ba20) published as a public test
+    artefact on dictate.com.au's Shopify CDN. The author metadata
+    inside the file reads "DICTATE" (vendor-provided test content, no
+    third-party identification).
+
+  - Reference framecrc shipped: 2319 lines (6 header + 2313 frame
+    entries), generated by the C decoder on the sample above. Drops
+    into tests/ref/fate/ds2-qp.
+
+  - One FATE rule added to tests/fate/audio.mak:
+      FATE_AUDIO-$(call DEMDEC, DS2, DS2) += fate-ds2-qp
+      fate-ds2-qp: CMD = framecrc -i $(TARGET_SAMPLES)/ds2/sample-qp.ds2
+
+  - DS2 SP support is in the decoder code (12 kHz mode) but not
+    covered by FATE in this series. A DS2 SP sample will follow when
+    one is sourced; the QP sample is the highest-leverage starting
+    point since QP is the dominant format in the field.
+
+  - DSS SP coverage remains with the existing dss_sp.c decoder and
+    dss.c demuxer; this series does not touch them.
 
 Changelog and doc
 -----------------
 
   - Changelog entry added under "version <NEXT>" -> "audio decoders".
-  - doc/general_contents.texi: DS2 added to the supported audio codecs
-    table.
+  - doc/general_contents.texi: DS2 added to the supported audio
+    codecs table (the existing DSS row is left as-is).
 
-Testing instructions
---------------------
-
-  git am 0001-libavformat-add-ds2-demuxer.patch
-  git am 0002-libavcodec-add-ds2-decoder.patch
-  ./configure --enable-decoder=ds2 --enable-demuxer=ds2
-  make -j$(nproc)
-  ./ffmpeg -i sample.ds2 sample.wav
-
-Background, integration patterns, additional validation data, and the
-production-deployment story for one user of this codec are at:
+Background, validation data in full, and the production-deployment
+context for one user of this codec are at:
 
   https://github.com/Guillain-RDCDE/DS2-Anywhere
 
-Comments and review welcome. Happy to iterate on style, naming,
-testing scope, anything.
+Review and comments welcome.
 
 Thanks,
 Guillain d'Erceville
+----8<-------- END MAIL BODY --------8<----
 ```
 
 ---
 
-## Open questions to settle before sending
+## Notes for the submitter (not in the mail)
 
-- **Subject line convention** — FFmpeg uses `avcodec/<topic>:` or `avcodec, avformat:` prefixes. The latter is appropriate here since the patchset touches both. To confirm by reading the last 100 `[PATCH]` subjects on the list archive.
-- **Patch series ordering** — demuxer first (1/2) since the decoder is useless without it for the `ffmpeg -i` use case. Open to reordering if reviewers prefer.
-- **MAINTAINERS entry** — should we add a `libavcodec/ds2.c` entry? Patrick is opted out of the list; we don't want to volunteer him as the listed maintainer. Possibly leave unowned and let it land where it lands.
-- **Sample file location** — FFmpeg samples go into the `fate-suite` git submodule (`samples.ffmpeg.org`). Coordination with one of the FFmpeg admins to push the sample once produced.
+### Pre-send checklist
 
-## Etiquette reminders
+1. **Re-confirm the commit hash.** `git -C ffmpeg log -1 --format='%h on %ad' --date=short master`
+   and replace `69bdb05, 2026-05-25` in the mail body if newer.
+2. **Re-confirm the patch still applies.** `git -C ffmpeg apply --check
+   ../patches/0001-libavformat-ds2.patch ../patches/0002-libavcodec-ds2.patch`.
+3. **Confirm `git format-patch` produces a clean single patch.**
+   Patrick's original gist is a single combined diff; we keep it as a
+   single commit (decoder + demuxer atomic), use `git am` to create
+   the commit with proper `Author:` (Patrick) and `Signed-off-by:`
+   (submitter), then `git format-patch -1 --stdout` for the wire
+   artefact.
+4. **Check subject convention** against last 100 patches on
+   `ffmpeg-devel`. The form `avformat/ds2, avcodec/ds2:` mirrors what
+   FFmpeg uses today for series spanning both libs. If the dominant
+   form on the archive is different, adjust.
+5. **Plain-text dry run.** `git send-email --dry-run --to=guillain@...
+   <patches>` to inspect the wire format before the real send.
 
-- Plain text only, no HTML, no attachments (patches sent via `git send-email` are inlined).
-- Subject line ≤ 78 chars.
-- Body lines wrapped at ~75 chars.
-- Reply by quoting (`> `) and below the quoted text.
-- One topic per thread; if a side question comes up, start a fresh thread.
-- Patience: review cadence on `ffmpeg-devel` is typically days, sometimes weeks. No bumping the thread before 7 days.
+### Why the scope is QP-decoded-only for FATE
 
-## When to send
+Patrick's decoder supports both DS2 SP and DS2 QP. The FATE sample we
+ship is QP only because (a) QP is the format in real-world use today,
+(b) the dictate.com.au public sample we located is QP, and (c) shipping
+a single high-confidence sample is better than shipping a synthetic SP
+sample with no real-world validation. SP coverage follows in a second
+patch once a sample exists.
 
-After:
+### MAINTAINERS
 
-1. ✅ Patch byte-for-byte validated (done).
-2. ⏳ FATE sample produced and checksums computed.
-3. ⏳ Changelog + doc entries added to the patch.
-4. ⏳ Final dry-run: clean checkout of master, apply both patches, build, FATE pass.
-5. ⏳ One last re-read of the cover letter by a second pair of eyes.
+Suggested: leave the new files unowned. Patrick has explicitly opted
+out of ffmpeg-devel interactions, so we do not list him as the
+listed maintainer. The submitter is not an FFmpeg regular either.
+Reviewers who want a name on file: option is to add a `R:` (Reviewer)
+line if FFmpeg's MAINTAINERS spec supports it (to verify), otherwise
+leave unowned.
 
-Then `git format-patch -2 --cover-letter --subject-prefix='PATCH'` and `git send-email --to=ffmpeg-devel@ffmpeg.org`.
+### After-send etiquette
+
+  - Patience: review cadence on `ffmpeg-devel` is days to weeks. No
+    bumping before 7 days have elapsed.
+  - Reply with quote (`> `) and below the quoted text.
+  - One topic per thread; spin a fresh thread for side questions.
+  - If a reviewer requests changes, post v2 as a separate thread
+    titled `[PATCH v2 0/2] ...` (not as a reply to v1).
