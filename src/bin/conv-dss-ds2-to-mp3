@@ -44,14 +44,18 @@ for a in "$@"; do
     --password=*)     password="${a#--password=}" ;;
     --bitrate=*)
       bitrate="${a#--bitrate=}"
-      [[ "$bitrate" =~ ^[0-9]+$ ]] && [ "$bitrate" -ge 16 ] && [ "$bitrate" -le 320 ] \
-        || die 2 "Invalid bitrate (16..320): $a" ;;
+      if ! [[ "$bitrate" =~ ^[0-9]+$ ]] || [ "$bitrate" -lt 16 ] || [ "$bitrate" -gt 320 ]; then
+        die 2 "Invalid bitrate (16..320): $a"
+      fi
+      ;;
     --*)              die 2 "Unknown option: $a" ;;
     *)                positional+=("$a") ;;
   esac
 done
 
-[ "${#positional[@]}" -ge 1 ] && [ "${#positional[@]}" -le 2 ] || die 2 "$USAGE"
+if [ "${#positional[@]}" -lt 1 ] || [ "${#positional[@]}" -gt 2 ]; then
+  die 2 "$USAGE"
+fi
 
 input="${positional[0]}"
 [ -f "$input" ] || die 1 "File not found: $input"
