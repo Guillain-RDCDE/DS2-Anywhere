@@ -2,7 +2,27 @@
 
 > Decode Olympus DSS/DS2 dictation files anywhere — pure CLI, no Windows, no GUI, no commercial software. A production integration recipe for a format that was locked for ten years. 🔓
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) ![Status](https://img.shields.io/badge/status-production-green) ![Platform](https://img.shields.io/badge/platform-linux-blue)
+[![CI](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Latest release](https://img.shields.io/github/v/release/Guillain-RDCDE/DS2-Anywhere)](https://github.com/Guillain-RDCDE/DS2-Anywhere/releases) ![Status](https://img.shields.io/badge/status-production-green) ![Platform](https://img.shields.io/badge/platform-linux-blue)
+
+## Try it in 30 seconds
+
+```bash
+git clone https://github.com/Guillain-RDCDE/DS2-Anywhere
+cd DS2-Anywhere
+docker compose up --build
+# Web UI: http://localhost:8080/convertisseur.php
+# HTTP API: http://localhost:8765/health
+```
+
+Drop a `.ds2` or `.dss` into `examples/` (the folder is mounted into both containers), then go to the web UI and convert.
+
+## Production install
+
+```bash
+sudo ./src/bin/install.sh
+```
+
+Interactive — asks the few questions that matter (install dir, audio root, DB creds if you use mode 2, alert email), generates a config, installs the cron + systemd unit + CLI symlink. Idempotent.
 
 ---
 

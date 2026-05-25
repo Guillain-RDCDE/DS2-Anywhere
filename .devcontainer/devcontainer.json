@@ -1,0 +1,33 @@
+{
+  "name": "DS2-Anywhere dev env",
+  "image": "mcr.microsoft.com/devcontainers/base:debian-12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    },
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "stable"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg shellcheck mariadb-client && echo 'Run: docker compose up' && echo 'Then visit http://localhost:8080/convertisseur.php'",
+  "forwardPorts": [8080, 8765],
+  "portsAttributes": {
+    "8080": { "label": "Web UI (PHP)", "onAutoForward": "openBrowser" },
+    "8765": { "label": "HTTP daemon", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "timonwong.shellcheck",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker",
+        "rust-lang.rust-analyzer"
+      ],
+      "settings": {
+        "files.eol": "\n"
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}

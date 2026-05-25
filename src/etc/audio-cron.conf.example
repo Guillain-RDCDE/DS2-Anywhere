@@ -1,0 +1,39 @@
+# DS2-Anywhere — audio_cron.sh configuration file.
+#
+# Copy this to /etc/conv-dss-ds2-to-mp3/audio-cron.conf and edit.
+# The cron sources this file at start ; any variable you set here overrides
+# the script's defaults. Anything you leave unset stays at the in-script default.
+#
+# Format: shell variable assignments. No quotes required for simple values ;
+# do quote paths that contain spaces.
+
+# --- Filesystem layout ---
+# Where your audio files live. Adapt to your pipeline.
+AUDIO_ROOT_PREFIX=/srv/AUDIO_ROOT
+
+SRC=${AUDIO_ROOT_PREFIX}/ftpsaisieaudio/faudio/audio_aconv
+DST_MAIL_BASE=${AUDIO_ROOT_PREFIX}/ftpmadactylo/mail
+DST_FTP_BASE=${AUDIO_ROOT_PREFIX}/ftpsaisieaudio/41
+DST_STT_BASE=${AUDIO_ROOT_PREFIX}/ftpsaisieaudio/tmp_audio_speechtotext
+
+LOG_FILE=/var/log/audio_converter.log
+
+# --- Mode 2 (DB-driven auto-feed) ---
+# Set USE_DB=0 if you don't have an email_messages-style schema.
+# In USE_DB=0 mode, mode 2 is skipped entirely — only mode 1 (audio_aconv) runs.
+USE_DB=1
+
+# MariaDB/MySQL credentials. Only used if USE_DB=1.
+DB_HOST=127.0.0.1
+DB_USER=DB_USER_PLACEHOLDER
+DB_PASS=DB_PASSWORD_PLACEHOLDER
+DB_NAME=DB_NAME_PLACEHOLDER
+
+# --- Alerting ---
+# Email address that receives conversion-failure alerts. Empty disables alerts.
+ALERT_EMAIL=
+
+# --- Binaries (rarely needs changing) ---
+CLI=/usr/local/bin/conv-dss-ds2-to-mp3
+NATIVE=/usr/local/bin/dss-decode-native
+FFMPEG=/usr/bin/ffmpeg

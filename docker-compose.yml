@@ -1,0 +1,39 @@
+# Demo all-in-one: HTTP daemon (native conversion) + PHP web UI to drag-drop test files.
+#
+# Usage:
+#   docker compose up --build
+#   open http://localhost:8080/convertisseur.php
+#
+# Bring your own DS2/DSS in the ./examples/ folder; it gets mounted at /data inside the daemon.
+
+services:
+
+  daemon:
+    build: .
+    container_name: ds2-anywhere-daemon
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./examples:/data:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8765/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  webui:
+    image: php:5.6-apache
+    container_name: ds2-anywhere-webui
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./src/web/convertisseur.php:/var/www/html/convertisseur.php:ro
+      - ./examples:/data:rw
+    depends_on:
+      - daemon
+    # The web UI in this repo points to 127.0.0.1:8765 by default.
+    # For docker-compose the daemon is at "daemon:8765" — uncomment and set if you patch the PHP:
+    # environment:
+    #   - DAEMON_URL=http://daemon:8765
+    restart: unless-stopped

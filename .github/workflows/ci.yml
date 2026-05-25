@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint everything
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: shellcheck bash scripts
+        run: |
+          shellcheck \
+            src/bin/audio_cron.sh \
+            src/bin/install.sh \
+            src/etc/audio-cron.conf.example
+          # The CLI wrapper uses arrays + nested heredocs ; shellcheck is overly strict on those, so we run it with a few exclusions
+          shellcheck --exclude=SC2068,SC2086 src/bin/conv-dss-ds2-to-mp3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: node --check on ESM modules
+        run: |
+          node --check src/lib/core.mjs
+          node --check src/lib/core-wasm.mjs
+          node --check src/bin/http_server.mjs
+
+      - name: php -l (PHP 5.6 compatibility check, runs in Docker)
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app php:5.6-cli \
+            php -l src/web/convertisseur.php
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ds2-anywhere:ci

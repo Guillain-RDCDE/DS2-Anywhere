@@ -1,0 +1,48 @@
+# Audio files (don't commit test fixtures or production samples by accident)
+*.ds2
+*.dss
+*.DS2
+*.DSS
+*.mp3
+*.wav
+*.m4a
+*.ogg
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# Rust build artefacts (if anyone builds the native binary locally)
+target/
+
+# Runtime / OS
+*.log
+*.pid
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.*.kate-swp
+
+# Build / install temporaries
+tmp/
+build/
+dist/
+*.tmp
+
+# Local-only overrides (config with credentials, never commit)
+*.local.conf
+*.local.env
+.env
+.env.local
+src/etc/audio-cron.conf
+!src/etc/audio-cron.conf.example

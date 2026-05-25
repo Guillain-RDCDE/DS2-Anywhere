@@ -49,40 +49,47 @@ find src/ -type f \( -name '*.sh' -o -name '*.mjs' -o -name '*.php' -o -name '*.
 
 ## Installation walkthrough
 
+### Recommended: the interactive installer
+
+```bash
+sudo ./src/bin/install.sh
+```
+
+Asks the questions, generates `/etc/conv-dss-ds2-to-mp3/audio-cron.conf`, installs systemd unit + cron + CLI symlink. Idempotent — safe to re-run if you want to change a value.
+
+### Manual install (if you prefer)
+
 Detailed in [docs/02-integration.md](../docs/02-integration.md). Short version:
 
 ```bash
-# 1. Install Node.js 18+ on the host
-apt install nodejs
+# 1. Prerequisites
+apt install nodejs ffmpeg mariadb-client
 
 # 2. Install the native binary
-#    Either:
-#      cargo build --release in https://github.com/gaspardpetit/dss-codec
-#    Or:
-#      download a pre-built binary from the releases page
+#    Either:  cargo build --release in https://github.com/gaspardpetit/dss-codec
+#    Or:      download from the project's GitHub Releases
 cp dss-decode /usr/local/bin/dss-decode-native
+chmod +x /usr/local/bin/dss-decode-native
 
 # 3. Drop the project
-git clone https://github.com/Guillain-RDCDE/ds2-anywhere /opt/conv-dss-ds2-to-mp3
-cd /opt/conv-dss-ds2-to-mp3/src
+git clone https://github.com/Guillain-RDCDE/DS2-Anywhere /opt/conv-dss-ds2-to-mp3
 
-# 4. Run the sed pass above to replace placeholders
+# 4. Create a config
+sudo mkdir -p /etc/conv-dss-ds2-to-mp3
+sudo cp /opt/conv-dss-ds2-to-mp3/src/etc/audio-cron.conf.example /etc/conv-dss-ds2-to-mp3/audio-cron.conf
+sudo nano /etc/conv-dss-ds2-to-mp3/audio-cron.conf   # edit the placeholders
 
-# 5. Install the CLI symlink
-ln -sf /opt/conv-dss-ds2-to-mp3/src/bin/conv-dss-ds2-to-mp3 /usr/local/bin/conv-dss-ds2-to-mp3
-chmod +x bin/*
+# 5. CLI symlink + perms
+sudo ln -sf /opt/conv-dss-ds2-to-mp3/src/bin/conv-dss-ds2-to-mp3 /usr/local/bin/
+sudo chmod +x /opt/conv-dss-ds2-to-mp3/src/bin/*
 
-# 6. Install the systemd unit + start the daemon
-cp etc/audio-convert.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now audio-convert
+# 6. systemd + cron
+sudo cp /opt/conv-dss-ds2-to-mp3/src/etc/audio-convert.service /etc/systemd/system/
+sudo cp /opt/conv-dss-ds2-to-mp3/src/etc/audio_converter.cron /etc/cron.d/audio_converter
+sudo systemctl daemon-reload && sudo systemctl enable --now audio-convert
 
-# 7. Install the cron
-cp etc/audio_converter.cron /etc/cron.d/audio_converter
-chmod 644 /etc/cron.d/audio_converter
-
-# 8. Drop the PHP page (if you want the web UI)
-cp web/convertisseur.php /your/admin/web/root/
+# 7. (optional) drop the PHP page in your admin area
+cp /opt/conv-dss-ds2-to-mp3/src/web/convertisseur.php /your/admin/web/root/
 ```
 
 That's the whole thing.
