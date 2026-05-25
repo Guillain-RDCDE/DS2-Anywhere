@@ -39,6 +39,17 @@ documented in this repository.
     URL:     https://github.com/gaspardpetit/dss-codec-wasm
     License: MIT
 
+  dss-codec (Rust crate fork: CI, streaming, decryption)
+    Author:  Gaspard Petit (forked from Kieran Hirpara)
+    URL:     https://github.com/gaspardpetit/dss-codec
+    License: MIT
+
+  FFmpeg DS2 C port (used in submission/ for upstream FFmpeg merge)
+    Author:  Patrick Domack
+    URL:     https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9
+    License: MIT / public domain (explicit relicensing grant:
+             https://github.com/hirparak/dss-codec/issues/1)
+
   lamejs (pure-JS MP3 encoder, used by the optional WASM chain)
     Authors: zhuker, breezystack fork
     URL:     https://github.com/breezystack/lamejs

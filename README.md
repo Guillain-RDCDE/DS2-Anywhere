@@ -116,11 +116,12 @@ If you have…
 The intellectual heavy-lifting belongs entirely to:
 
 - **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that made all of this possible. MIT, February 2026.
-- **Gaspard Petit** — [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) — the WASM build and npm packaging on top. MIT.
+- **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) (WASM build) and [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (Rust crate with CI, streaming, decryption — the one our Dockerfile uses). MIT.
+- **Patrick Domack** — [FFmpeg C port gist](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) — independent C implementation of the spec, being [prepared for upstream FFmpeg submission from this repo](submission/). MIT / public domain.
 - **lamejs** ([breezystack fork](https://github.com/breezystack/lamejs)) — pure-JS MP3 encoder. LGPL.
 - **[FFmpeg](https://ffmpeg.org/)** — the encoder we use in the native chain. LGPL.
 
-This repo is a recipe. The recipe needs the ingredients above to exist at all.
+This repo is a recipe. The recipe needs the ingredients above to exist at all. Full credit breakdown: [CREDITS.md](CREDITS.md).
 
 ## License
 

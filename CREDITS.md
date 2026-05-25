@@ -16,11 +16,21 @@ Before this work, DS2 was undecodable on any open-source stack. After this work,
 
 The full story of how this work was done is in [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md).
 
-### Gaspard Petit — [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm)
+### Gaspard Petit — [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) and [gaspardpetit/dss-codec](https://github.com/gaspardpetit/dss-codec)
 
-The WASM build of `dss-codec`, the npm packaging, the JavaScript bindings, the streaming decoder API, the wasm-bindgen wrapper. MIT licensed. This is what made the codec usable from any JS/TS project (Node, browser, edge worker) without needing a Rust toolchain.
+The WASM build of the codec (`dss-codec-wasm`), the npm packaging, the JavaScript bindings, the streaming decoder API, the wasm-bindgen wrapper. MIT licensed. This is what made the codec usable from any JS/TS project (Node, browser, edge worker) without needing a Rust toolchain.
+
+Gaspard also maintains a [fork of Hirpara's Rust crate](https://github.com/gaspardpetit/dss-codec) with CI workflows, streaming decode, and 128/256-bit decryption support — that's the source our Dockerfile clones to build the native `dss-decode` binary. The fork sits between Hirpara's upstream spec and our production runtime; without it, we'd be building from raw upstream + carrying our own patches.
 
 The WASM build was our first integration target. We later switched to the native binary for performance reasons (see [docs/04-wasm-vs-native.md](docs/04-wasm-vs-native.md)), but the WASM is what got us off the ground in a few hours, and it's the chain we kept as a documented fallback.
+
+### Patrick Domack — FFmpeg C port ([gist `330dd3f5…`](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9))
+
+The hand-written C port of the DS2 decoder + demuxer for FFmpeg — `libavcodec/ds2.c` (982 lines) + `libavformat/ds2.c` (369 lines), independent of Hirpara's Rust but following the same published specification. Posted as a gist in March 2026, then explicitly relicensed under MIT / public-domain terms in [hirparak/dss-codec#1](https://github.com/hirparak/dss-codec/issues/1) for upstream inclusion in FFmpeg.
+
+This is the work that closes the loop: once Patrick's C lands upstream, **DS2 / DS2 Pro becomes a first-class audio format in any FFmpeg build, anywhere**. No more decoder bundling, no more native binary in our Dockerfile, no more "first install this dependency". Just `ffmpeg -i recording.ds2 out.wav`.
+
+Patrick has asked to stay off the `ffmpeg-devel` mailing list. The mailing-list submission (cover letter, FATE sample, validation campaign) is being prepared in this repo at [`submission/`](submission/) and will go out under the submitter's name, on Patrick's behalf, with his explicit consent. See [submission/README.md](submission/README.md) for the chain of credit going to FFmpeg.
 
 ---
 
@@ -61,8 +71,10 @@ This repo is what one production team did with February 2026's gift. Nothing mor
 If you're using this repo as a starting point for your own integration, the appropriate credits in your project's README:
 
 ```markdown
-- Codec: [hirparak/dss-codec](https://github.com/hirparak/dss-codec) (MIT)
+- Codec spec & Rust reference: [hirparak/dss-codec](https://github.com/hirparak/dss-codec) (MIT)
+- Rust crate fork (CI, streaming, decryption): [gaspardpetit/dss-codec](https://github.com/gaspardpetit/dss-codec) (MIT)
 - WASM build: [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) (MIT)
+- FFmpeg C port (upcoming): [patrickdk77 gist](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) (MIT / public domain)
 - Integration patterns: [Guillain-RDCDE/DS2-Anywhere](https://github.com/Guillain-RDCDE/DS2-Anywhere) (MIT)
 ```
 
