@@ -75,15 +75,11 @@ Full install + cron + web UI setup: [docs/02-integration.md](docs/02-integration
 
 ## Real-world numbers
 
-Validation campaign on **35 real dictation files** (32 DS2 QP + 3 DSS SP) — production data from a live transcription pipeline (sanitized).
+The decision to ship was based on **an A/B against the reference Windows implementation on the same source file**, not just a count of successful decodes. The full validation, in order of weight:
 
-| Metric | Value |
-|---|---|
-| Conversion success rate | **35 / 35** (0 failure) |
-| Median file duration | 17 min |
-| Total audio decoded | 6 h 48 min |
-| Decode wall-clock (batch) | ~8 min |
-| A/B vs commercial Switch.exe (Whisper transcript) | **identical quality** (16,2 % vs 17,2 % low-confidence words — within noise) |
+1. **A/B vs Switch.exe** (same `.ds2`, both chains, both MP3s through the same Whisper API): transcripts are **functionally identical**. Switch.exe: 16.2 % low-confidence words. Our chain: 17.2 %. Within Whisper's own run-to-run variance. The two chains are interchangeable for any downstream pipeline.
+2. **Sample**: 35 real production dictations (32× DS2 QP + 3× DSS SP, 6 h 48 of audio total). **35 / 35** decoded successfully, zero failures. Sample is intentionally tight — DS2 files don't survive long in our pipeline (raw uploads archived after ~2 weeks), and the A/B against the reference was what carried the call, not the headcount.
+3. **Production**: ~3 200 cron passes since go-live, zero errors logged. Every new DS2 entering the system now goes through this chain. The Switch VM stays on standby, untouched.
 
 [Full methodology and results →](docs/03-validation-campaign.md)
 

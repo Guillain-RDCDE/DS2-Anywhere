@@ -123,7 +123,11 @@ We tested 35 *real* files from clients who use Olympus recorders normally. We di
 
 35 was the cap because we wanted real, recent files from active commands — and active DS2 commands have a short shelf life. The intake pipeline keeps raw DS2 around for about 14 days, then archives or deletes them as part of the normal command lifecycle. We sampled what we could find that was both recent enough to still be on disk and old enough to have its commands already delivered (so we could compare transcripts against the human-reviewed final text).
 
-35 is comfortably above the threshold where you'd catch a systematic decoder bug: if a particular DS2 mode were misdecoded, we'd see *every* file of that mode produce garbage transcripts. We saw none of that. 
+35 is comfortably above the threshold where a systematic decoder bug would have surfaced: if DS2 QP audio were being misdecoded — wrong sample rate, phase-inverted, frame-misaligned — *every* file would have produced garbage transcripts, not just some. We saw zero. A faulty codec doesn't fail subtly on real-world data; it fails everywhere, immediately.
+
+The conscious call we made: **the A/B against Switch.exe on a representative file matters more than the raw count.** If two chains produce transcripts of statistically equivalent quality from the same source, by transitivity they'll do so on any file — the Whisper engine doesn't know which chain produced the audio, it just sees PCM samples. Show them equivalent on the hard case (a 31-minute legal dictation with proper nouns, spelled-out names, recorder background noise), and the small-sample concern fades.
+
+If you reproduce this work on your own pipeline, the sample size you need depends on your tolerance for tail risk. Unforgiving downstream (e.g. clinical transcription)? Broaden the sample with a mix of recorder models and firmware versions. Our case (Whisper, French legal dictation, human-in-the-loop typist review downstream): 35 + A/B was enough to flip production traffic with confidence.
 
 ## The proof in production
 
