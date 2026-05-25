@@ -11,6 +11,18 @@ docker compose up --build
 #   docker compose exec daemon conv-dss-ds2-to-mp3 /data/recording.ds2 /data/recording.mp3  (CLI inside the container)
 ```
 
-We don't ship a sample DS2 in the repo for licensing reasons — Olympus's own sample files are copyrighted. If you have access to a recorder, two minutes of any spoken text (including your own voice reading the Wikipedia article on something) gives you a usable test file.
+## If you don't have a `.ds2` to test with
 
-Contributions welcome: if you have a CC0 / public-domain DS2 recording you're happy to donate as a fixture, open an issue or PR.
+Use the FATE sample we ship for the upstream FFmpeg submission:
+
+```bash
+cp submission/fate/sample-qp.ds2 examples/
+```
+
+It's a 37-second DS2 QP file (16 kHz mono, 129 KiB), originally hosted as a public test artefact on dictate.com.au's CDN, with neutral content ("DICTATE" as author metadata, no third-party identification). We use it both as a FATE regression test for the FFmpeg patch and as a known-good starting point for anyone trying the toolchain.
+
+## Bring your own
+
+We don't ship your client recordings here, obviously. Any 20-second DS2 / DSS file you have access to works as a smoke test — the converter is format-aware (it inspects the magic bytes and routes to SP or QP automatically).
+
+If you have a CC0 / public-domain DS2 recording you'd like to add as an additional fixture for community testing, open an issue or PR.

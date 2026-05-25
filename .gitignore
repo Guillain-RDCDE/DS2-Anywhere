@@ -8,6 +8,11 @@
 *.m4a
 *.ogg
 
+# ...with an explicit exception for the FATE sample we ship for upstream
+# FFmpeg submission (public test artefact, not a production file).
+!submission/fate/*.ds2
+!submission/fate/*.DS2
+
 # Node
 node_modules/
 npm-debug.log*
