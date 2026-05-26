@@ -23,12 +23,12 @@ transcription-software vendors to test their DSS Pro support.
 | Duration | 37.01 s |
 | Author metadata | `DICTATE` (vendor test content) |
 | Date metadata | `2018-06-13T11:20:29` |
-| Frames decoded | 2313 |
+| Frames decoded | 2310 |
 
 A copy is included in this folder as [`fate/sample-qp.ds2`](fate/sample-qp.ds2)
 and the corresponding reference output as
-[`fate/fate-ds2-qp.ref`](fate/fate-ds2-qp.ref) (framecrc, 2319 lines =
-6 header lines + 2313 frame entries).
+[`fate/fate-ds2-qp.ref`](fate/fate-ds2-qp.ref) (framecrc, 2316 lines =
+6 header lines + 2310 frame entries).
 
 ## Why this sample
 
@@ -81,21 +81,15 @@ noise.
 
 ```
 PCM samples compared:  591360
-  exact match:           49.59 %
-  diff = +/-1 LSB:       50.39 %  (float-to-int16 ordering noise)
-  diff = +/-2 LSB:        0.02 %
-  diff >= 3:              1 sample
-  max abs diff:           3
-RMS error:                0.71
-RMS signal:               1484
-SNR:                      66.4 dB
+  exact match:           100.00 %
+  any difference:          0 samples
+  max abs diff:            0
+  SNR:                     infinite (no error)
 ```
 
-The +/-1 LSB delta is inaudible by construction: each differing sample
-is off by at most one int16 quantization step. This is the expected
-shape of disagreement between two floating-point CELP implementations
-that follow the same specification — neither is "more correct" than
-the other; both are within rounding noise of the mathematical ideal.
+In v2, the C decoder is bit-perfect equivalent to the Rust reference.
+The v1 patch had +/-1 LSB rounding noise on 50% of samples (SNR 66.4
+dB); v2 fixes the rounding bug and the difference is now zero.
 
 ## Other validation, for context (not exercised by FATE)
 
@@ -143,9 +137,9 @@ C decoder produces.
 ```
 sample.ds2  md5  = 23eab82c3fc093c44ef4eb45ac35ba20
 sample.ds2  size = 132608 bytes
-output PCM  md5  = 2f46c9c35c606cbcf2bbd8bb55d366a9   (Patrick C decoder)
+output PCM  md5  = 352d08d75cb44c1fba30f7e01c1e3730   (Patrick C v2 decoder)
                    352d08d75cb44c1fba30f7e01c1e3730   (Hirpara Rust)
-framecrc lines   = 2319 (6 header + 2313 frame entries)
+framecrc lines   = 2316 (6 header + 2310 frame entries)
 ```
 
 The two PCM md5s differ because of the +/-1 LSB rounding noise

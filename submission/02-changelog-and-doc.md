@@ -18,9 +18,9 @@ That's it. One entry.
 The existing `dss_sp` decoder is untouched, so no Changelog entry for
 DSS itself.
 
-## `doc/general_contents.texi`
+## `doc/general_contents.texi` (already in v2 patch)
 
-Find the audio decoders table (`@section Audio Decoders`) and add an
+v2 of the patch already includes the doc update. For reference, find the audio decoders table (`@section Audio Decoders`) and add an
 entry in alphabetical position:
 
 ```texi

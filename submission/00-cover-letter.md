@@ -8,7 +8,7 @@
 
 ```
 ----8<-------- BEGIN MAIL BODY --------8<----
-Subject: [PATCH] avcodec, avformat: add Olympus DS2 decoder and demuxer
+Subject: [PATCH v2] avcodec, avformat: add Olympus DS2 decoder and demuxer
 
 Hi,
 
@@ -38,7 +38,11 @@ does not build. Combined size:
                               / allformats.c / codec_desc.c /
                               codec_id.h
 
-Total: 1363 insertions across 8 files.
+Total: 1506 insertions across 9 files.
+
+v2 changes: see commit message at end (rounding + EOF fixes from
+upstream author Patrick Domack, decoder now bit-perfect vs Hirpara
+reference; doc/general_contents.texi added).
 
 The patch applies cleanly to master HEAD (commit 69bdb05, 2026-05-25);
 make passes; the new decoder + demuxer build out of the box with
@@ -93,16 +97,12 @@ Decoder correctness was verified by comparing C output against
 Hirpara's reference Rust on the FATE sample shipped with this series:
 
   PCM samples compared:  591,360 (37.0 s @ 16 kHz)
-  exact match:           49.59 %
-  diff = +/-1 LSB:       50.39 %  (float-to-int16 ordering noise)
-  diff = +/-2 LSB:        0.02 %
-  diff >= 3:              1 sample (max abs diff = 3)
-  RMS error:              0.71
-  SNR:                    66.4 dB
+  exact match:           100.00 %
+  any difference:          0 samples
+  max abs diff:            0
+  SNR:                     infinite (no error)
 
-The +/-1 LSB delta is inaudible: each differing sample is off by at
-most one int16 quantization step. The two implementations follow the
-same specification and produce equivalent output within rounding noise.
+The two implementations produce bit-identical PCM output.
 
 Beyond the FATE sample, the decoder has been exercised on a 31-minute
 production DS2 QP recording and on a 35-file corpus of in-the-wild DS2

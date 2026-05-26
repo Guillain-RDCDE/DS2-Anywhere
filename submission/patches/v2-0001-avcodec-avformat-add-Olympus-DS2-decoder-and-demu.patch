@@ -1,3 +1,8 @@
+From 5506ad8580b0f23f77f81e35a214076d1f481970 Mon Sep 17 00:00:00 2001
+From: Patrick Domack <patrickdk77@users.noreply.github.com>
+Date: Tue, 26 May 2026 17:06:28 +0200
+Subject: [PATCH v2] avcodec, avformat: add Olympus DS2 decoder and demuxer
+
 Add support for the Olympus Digital Speech Standard Pro (DS2) audio
 format used by Olympus DS-, DM-, and DPM-series dictation recorders.
 

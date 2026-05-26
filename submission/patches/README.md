@@ -9,7 +9,7 @@
 
 | File | What it is |
 |---|---|
-| [`0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demuxer.patch`](0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demuxer.patch) | The raw `git format-patch` artefact. mbox-style, includes `From:`/`Date:`/`Subject:` headers. If you ever switch to `git send-email`, this is the file you pass to it. |
+| [`v2-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch`](v2-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch) | The raw `git format-patch` artefact. mbox-style, includes `From:`/`Date:`/`Subject:` headers. If you ever switch to `git send-email`, this is the file you pass to it. |
 | [`email-subject.txt`](email-subject.txt) | Single line — paste verbatim into the `Subject:` field of your mail client. |
 | [`email-body.txt`](email-body.txt) | The patch with the email headers stripped — paste verbatim into the body of your mail client. **This is what reviewers will see.** |
 
@@ -28,8 +28,8 @@ git format-patch -1 -o patches/
 Result:
 - **Author:** `Patrick Domack <patrickdk77@users.noreply.github.com>` (GitHub noreply convention, since Patrick has no public email)
 - **Signed-off-by:** `Guillain d'Erceville <guillain@poulpe.us>` (the submitter, certifying the DCO)
-- **md5:** `faaf6467d966f16ec89c51811cb5daff`
-- **size:** 65,467 bytes
+- **md5:** `399124d75b97fdfa19ea4a4ffd670a0d`
+- **size:** 72,155 bytes
 
 ## Verification (already done — see `02-validation` below)
 
@@ -37,7 +37,7 @@ Result:
 # Fresh clone, fresh apply, fresh build:
 git clone <ffmpeg> /tmp/fresh && cd /tmp/fresh
 git reset --hard 69bdb05
-git am 0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demuxer.patch  # → applies cleanly
+git am v2-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch  # → applies cleanly
 ./configure --enable-decoder=ds2 --enable-demuxer=ds2 ...
 make ffmpeg  # → builds cleanly
 
@@ -46,7 +46,7 @@ make ffmpeg  # → builds cleanly
 diff /tmp/regen.framecrc ../fate/fate-ds2-qp.ref  # → byte-identical
 ```
 
-Both md5 = `43cb8828c12b7482474aef4481a59f5d`.
+Both md5 = `6fc7b20c8ab3943f604718ac4f4a88fc`.
 
 ## Sending procedure
 
@@ -102,7 +102,7 @@ git config --global sendemail.smtpencryption tls
 git config --global sendemail.smtpserverport 587
 
 git send-email --to=ffmpeg-devel@ffmpeg.org \
-  0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demuxer.patch
+  v2-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch
 ```
 
 (You'll need a Gmail App Password since Google deprecated plain SMTP
