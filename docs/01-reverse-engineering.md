@@ -50,7 +50,7 @@ The pseudo-C isn't pretty. Functions are named `FUN_10017460`. Variables are `iV
 
 ### What you start with
 
-For DS2, Hirpara worked from two binaries:
+A handful of DLLs ship with Olympus's Windows player. The interesting bits, for DS2, sit in two of them:
 
 - **`DssDecoder.dll`** — 465 KB, from Olympus's AudioSDK. The official Olympus decoder, distributed with the DSS Player software.
 - **`dss32.dll`** — 215 KB, from NCH Switch. NCH licensed the codec from Olympus and shipped their own wrapper.
@@ -202,19 +202,9 @@ Once decrypted, the audio body looks identical to a plain DS2 — you re-attach 
 
 ## 8. Is this legal?
 
-Yes. Two layers to the answer:
+Yes — both EU ([Directive 2009/24/EC Art. 6](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32009L0024)) and US ([DMCA §1201(f)](https://www.law.cornell.edu/uscode/text/17/1201)) carve out explicit exemptions for **reverse engineering for interoperability**. You can disassemble proprietary code to understand its file formats, as long as you don't redistribute the original code itself.
 
-### EU: explicit allowance
-
-EU Directive 2009/24/EC, Article 6, explicitly authorizes **decompilation for interoperability purposes**. You can disassemble proprietary code to understand its file formats and protocols, in order to write software that works with them. Olympus has no legal grounds to object to a clean-room decoder.
-
-### US: still fine, under DMCA §1201(f)
-
-The DMCA carves out an exemption for "reverse engineering for interoperability" — same idea. As long as no Olympus code is redistributed (and Hirpara's repo redistributes none — only the spec + a from-scratch Rust implementation), it's protected.
-
-### What matters in practice
-
-The upstream codec is **MIT licensed**. The spec is published. Olympus has been aware of the project (it's been on GitHub since February) and has taken no action — because there's nothing to take action on. The work is, legally and ethically, in the clear.
+Hirpara redistributes nothing from Olympus — only the spec he wrote and a from-scratch Rust decoder, both MIT-licensed. Olympus has been aware of the project since February 2026 and has taken no action — because there's nothing to take action on. This is exactly the kind of work the law was written to protect.
 
 ## 9. Sources
 

@@ -22,7 +22,7 @@ Drop a `.ds2` or `.dss` into `examples/` (the folder is mounted into both contai
 sudo ./src/bin/install.sh
 ```
 
-Interactive — asks the few questions that matter (install dir, audio root, DB creds if you use mode 2, alert email), generates a config, installs the cron + systemd unit + CLI symlink. Idempotent.
+Asks the half-dozen questions that actually matter — install dir, audio root, DB creds if you want mode 2, alert email — then drops the config, the cron, the systemd unit and the CLI symlink in place. Run it again, nothing breaks.
 
 ---
 
