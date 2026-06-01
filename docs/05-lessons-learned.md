@@ -209,7 +209,7 @@ The five-year version of this project should still have this paragraph in the ch
 
 ---
 
-This is the end of the documentation chapters. Back to [the README](../README.md) for the source tree, the install steps, and the next steps.
+There's one more chapter, written later — after a bug we didn't see coming surfaced in production months in: [06 — The empty-block bug](06-the-empty-block-bug.md). It's the most detailed debugging walkthrough in this repo, and the most reusable. Otherwise, back to [the README](../README.md) for the source tree, the install steps, and the next steps.
 
 ---
 
