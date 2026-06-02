@@ -1,0 +1,32 @@
+# The DS2-Anywhere docs
+
+A long-form, didactic walkthrough of how a format that was locked for ten years got decoded on Linux, put into production, and debugged in public — mistakes and all. You can read these in order as one story, or jump to the chapter you need.
+
+New here? Start with the [README](../README.md) for the 30-second demo and the install. Then come back for the story.
+
+## The chapters
+
+| # | Chapter | What it's about |
+|---|---------|-----------------|
+| 00 | [The operational pain](00-operational-pain.md) | What a Windows-VM DS2 pipeline actually costs you in production, and why it kept breaking. ⚙️ |
+| 01 | [The reverse engineering](01-reverse-engineering.md) | How the codec was cracked from the Olympus DLLs with Ghidra — **the genius part, and it isn't ours.** |
+| 02 | [Integration](02-integration.md) | Turning a decoder into a service: CLI, cron, HTTP daemon, web UI. The reusable patterns. |
+| 03 | [The validation campaign](03-validation-campaign.md) | How we decided it was safe to ship — an A/B against the commercial reference, not a count of green checks. |
+| 04 | [WASM vs native](04-wasm-vs-native.md) | Why the first build was WebAssembly, why production runs a native binary, and the 3–5× that bought. |
+| 05 | [Lessons learned](05-lessons-learned.md) | The transferable lessons — including the one about reporting your own mistakes. 🐛 |
+| 06 | [The empty-block bug](06-the-empty-block-bug.md) | Bit-exact on every file we tested, **still** wrong on paused recordings. Ten dead ends, a twelve-line fix. 🧱 |
+| 07 | [Cracking the re-sync block](07-cracking-the-resync-block.md) | We ran the closed Olympus decoder inside a debugger we built from its own DLLs, and read the format's last demux rule off the silicon. 🔓 |
+| 08 | [The decoder black hole](08-the-decoder-black-hole.md) | The terse engineer's handoff for the "last bug." ⚠️ **Superseded by 10 — kept as honest record.** |
+| 09 | [The re-sync excitation anomaly](09-the-resync-excitation-anomaly.md) | The research-paper write-up of that same "last bug": analysis-by-synthesis, nine falsified hypotheses, a hidden state machine. ⚠️ **Its central claim is wrong — read 10.** |
+| 10 | [The reckoning: the bug that wasn't](10-the-reckoning-the-bug-that-wasnt.md) | The twist. We built an instrumentable oracle from the vendor's DLLs, watched a reference lie to us, and settled it by **listening**. There was no bug. **The most honest chapter here.** 👂 |
+
+## How to read it
+
+- **The integration story (00 → 05):** if you want to take an open codec into production, this is the recipe — pain, RE, integration, validation, the WASM→native call, and the lessons.
+- **The detective trilogy-plus (06 → 10):** if you reverse-engineer for a living, start here. Two real bugs hunted to ground (06, 07), then a rigorous investigation into a third (08, 09) that **08 and 09 get confidently wrong** — and 10, the reckoning, which is the single most useful read in the repo: how careful work fools itself, and the cheapest test that breaks the spell.
+
+A note on chapters 08 and 09: we did not delete them when their conclusion fell. They're preserved, each behind a banner, because the *method* in them is sound and the *trap* they fell into is the lesson. A reverse-engineering log is only worth something if its dead ends stay marked.
+
+---
+
+*Eleven chapters from "impossible for ten years" to "production in a weekend" — including the wrong turn we're proudest of having written down. 🔓*

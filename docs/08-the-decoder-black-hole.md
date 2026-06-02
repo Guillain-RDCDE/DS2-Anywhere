@@ -1,5 +1,9 @@
 # 08 — The handoff: one synthesis function between us and 100%
 
+> ## ⚠️ Superseded — the handoff was for a bug that doesn't exist. Read [10 — The reckoning](10-the-reckoning-the-bug-that-wasnt.md).
+>
+> **This page hands off an investigation we later proved was chasing a phantom.** There is no residual decoder discrepancy: our decode of the contested file is faithful end to end (confirmed by ear), the "10× too-quiet band" was an inverse-filter A/B diverging from a reference it should not have trusted, and the "soft passage" was the speaker moving in the room. The **"SPEC gap"** asserted below is wrong — Kieran Hirpara's and Patrick Domack's ports were **complete**. The reflection coefficients, demuxer, and synthesis are all correct. We keep this handoff, unedited below this banner, as the honest engineering record; **[chapter 10](10-the-reckoning-the-bug-that-wasnt.md) is the reckoning, and the Wine + gdb oracle it describes is the tool this page kept asking for.**
+
 > This is a working document, not a war story. **For the narrative, polished write-up of this same investigation, read the research paper: [09 — The re-sync excitation anomaly](09-the-resync-excitation-anomaly.md).** This page is the terse engineer's handoff. Chapters 06 and 07 closed the demuxer: the native pipeline now turns DS2 bytes into frames exactly the way the Olympus parser does, confirmed against the real DLL. One thing remains — a single acoustic regime where the **decoder** (frames → audio) still diverges. Here is everything the next session needs to finish it, so nobody has to re-derive what we already know.
 
 ---

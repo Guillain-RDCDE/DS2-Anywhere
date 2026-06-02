@@ -155,6 +155,8 @@ Honesty, per the house style. That middle band — the loud passage right after 
 
 But notice how much the hole shrank. Chapter 06 left an entire *file class* falling back to Windows. This chapter hands the demuxer back to the native code completely and leaves a single, well-characterised symptom — *one synthesis function, one acoustic regime* — for a future session to hook the same way we hooked the parser. And in our production context it's a non-issue: the typists work from the original `.ds2` on their own Olympus players; the server MP3 is a convenience copy, not the deliverable. A contained, understood gap beats a silent one. (See **08 — the handoff** for the exact next steps.)
 
+> **Update — there was no hole.** Chapters 08 and 09 chased this "loud-passage discrepancy" as a real decoder bug and built a rigorous case for it. Chapter 10 settles it: when we finally built an instrumentable oracle from the Olympus DLLs and then simply *listened* to the file, the decode was faithful end to end. The "still wrong" band was the speaker moving to a quieter spot, and the 10× number was an inverse-filter A/B diverging from a reference it shouldn't have trusted. The **demux** fix in this chapter is the real, proven win; the leftover "codec discrepancy" was a phantom. Read **[10 — The reckoning](10-the-reckoning-the-bug-that-wasnt.md)** for the honest accounting — it's the most useful chapter in the repo.
+
 ---
 
 ## What to take away
@@ -167,7 +169,7 @@ But notice how much the hole shrank. Chapter 06 left an entire *file class* fall
 
 ---
 
-Next: **[08 — The decoder black hole](08-the-decoder-black-hole.md)** — the one divergence left (a loud passage right after a pause), why it's a *codec* not a demux problem, and the exact warm-rig next steps to close it.
+Next: **[08 — The decoder black hole](08-the-decoder-black-hole.md)** and **[09 — the research paper](09-the-resync-excitation-anomaly.md)** — the investigation into that loud post-pause passage, built as a rigorous case for a real codec bug… and then **[10 — The reckoning](10-the-reckoning-the-bug-that-wasnt.md)**, where an instrumentable oracle and a simple listen prove it was a phantom. The two-chapter chase and its overturning are, together, the best read in the repo.
 
 ---
 
