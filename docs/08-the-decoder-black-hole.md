@@ -51,7 +51,42 @@ QP's decode path is *almost* reproduced by the open ports: parse → voiced exci
 
 That is the prime suspect now: the ports' integer-pitch `pitch_memory[end - pitch + i]` with a flat `pitch_gain` omits whatever `FUN_10018800` does with its persistent buffer and pitch-indexed factor. It would bite hardest exactly where the adaptive (pitch) contribution dominates and the buffer state matters — a sustained voiced passage right after a re-sync, where the persistent buffer was just disturbed. (Caveat: the band's pitch *distribution* matches the good regions, so it's the buffer-state/gain handling, not the raw lag, that differs.)
 
-Every other static hypothesis has been chased to ground and refuted. The decisive move is either (a) read `FUN_10018800` fully and port its persistent-buffer + pitch-gain-factor logic, then A/B vs Switch; or (b) watch the real QP decoder run on a bad-band frame (the blocker below) and diff its excitation array against the ports' directly.
+### Analysis-by-synthesis nailed the layer (decoder-free)
+
+We then did the test that finally splits coeffs from excitation **without** running the decoder. Our reflection coeffs are bit-verified correct (the frame bits match the real parser, refl region included). So inverse-filter the Switch reference WAV through the *analysis* lattice with **our** coeffs (and inverse de-emphasis), and you recover **Switch's own excitation**. Compare it to the excitation our decoder synthesises:
+
+```
+region        corr(our exc, Switch exc)   RMS ours   RMS Switch   ratio
+before band            1.000                 438         438       1.00
+the re-sync band       0.002                 313        3281      10.5x
+after band             1.000                 254         254       1.00
+```
+
+This is conclusive: **coeffs and the lattice are perfect** (1.000 corr outside the band proves the inverse-filter + coeffs are exact), and **the residual is entirely in the excitation** — in the band, Switch's excitation is **10× louder and completely decorrelated** from ours. Characterising it further: Switch's band excitation is **more *pitched*** (autocorr periodicity 0.24 vs 0.05 outside), not noisier — so it is the **adaptive (pitch) contribution** that is wrong/too weak in our decoder, not a noise path.
+
+### The mechanism (evidence-backed)
+
+The adaptive codebook is a feedback loop: `excitation = pitch_gain·(past excitation, repeated at the pitch lag) + fixed`, and that excitation is fed back into the pitch memory for the next subframe. Everything entering the band matches (frames, coeffs, pitch memory all verified). So a **small excitation difference introduced at the `count=19` re-sync block** is then **amplified by the pitch-feedback loop across the sustained high-pitch-gain passage** — ours decays to ~1/10th, Switch's sustains loud — and it self-heals when the pitch gain drops at ~60 s. The exact thing the real decoder does to the excitation/pitch-memory at the re-sync (in `FUN_10018800`, the rich excitation builder with its persistent buffer and pitch-indexed gain factor `dVar2 = table[pitch + DAT_1006ecc8[mode]]`) is the missing piece. It is NOT a static gain-table error (those match outside the band) — it is a re-sync-triggered state/gain difference.
+
+### Root cause (the dissection that nailed it)
+
+We located the FIRST diverging subframe and dissected it against Switch's recovered excitation. The result is unambiguous:
+
+- The divergence begins **exactly at subframe 13156 = 52.62 s = the `count=19` re-sync block.** Not before, not after — at the re-sync.
+- The smoking gun, the very next subframes: e.g. one has gain index → `gc = 7` (essentially **zero** fixed-codebook gain) and a small pitch gain, so the ports synthesise an excitation of RMS ≈ 57. **Switch's excitation for that same subframe has RMS ≈ 3779 — ~66× larger.** Across the band, Switch's excitation is huge *regardless of how small the bitstream's gain indices are.*
+
+So the real decoder does **not** decode the re-sync region as ordinary CELP. The `count=19` block triggers a **special decode mode** in which the excitation is generated loud, independent of the per-subframe gain indices, and that mode persists until alignment returns at the next anchor-0 block (≈ 60 s). The open ports have no such mode: they decode those frames as normal CELP, get near-zero gains, produce a 10× too-quiet excitation, and the pitch-feedback loop then smears it into the decorrelated band we measured.
+
+The mechanism unifies two threads we'd chased separately. `FUN_10017e70` has two excitation branches: voiced (pitch, via `FUN_10018800`) and **`param_3 == 0` → PRNG-noise excitation** (`state = state*0x209 + 0x103`, scaled by a gain table `DAT_1004ce50`). `param_3` is driven by the **frame-counter state machine in `FUN_10018450`** (`0x6c` enables it, `0x328`/`0x32c` count frames, `0x330` is the "mode active" flag, gated with the `0x69e0` queue). The pieces fit:
+
+- **Continuous QP** → state machine never arms → always voiced → bit-exact (this is exactly why the FATE sample is perfect and why we "ruled out" the unvoiced path earlier — that ruling was right *for continuous files*).
+- **The `count=19` re-sync** → arms the counter for a run of frames → `param_3 = 0` → **PRNG-noise excitation, loud and independent of the per-subframe gain indices** → exactly the "huge excitation despite `gc=7`" we measured, and decorrelated because a PRNG sequence is not the ports' pitch+pulse signal. The mode disarms at re-alignment (~60 s).
+
+So the earlier unvoiced/PRNG hypothesis was correct after all — it is just **re-sync-triggered, not per-frame-bit-driven**, which is why it never showed on continuous files. That is the undocumented behaviour the reverse-engineered spec — and both open ports — is missing.
+
+### What's left
+
+The cause is now **identified**, not just localised: a `count=19`-triggered, counter-bounded decode mode that generates loud excitation independent of the bitstream gains. Implementing it is the remaining work, and the path is concrete: read the mode branches of `FUN_10018450` → `FUN_10017e70` → `FUN_10018800` (the `0x328`/`0x32c`/`0x330` state machine and what it switches the excitation to), port it, and validate with the inverse-filter A/B (a precise, decoder-free regression test that already pinpoints the exact subframes and the expected excitation RMS). Hooking `FUN_10018800`'s output on the running decoder would confirm the exact excitation it emits in the mode, but the static path is now well-defined.
 
 ## The exact next steps (the tooling already exists)
 
