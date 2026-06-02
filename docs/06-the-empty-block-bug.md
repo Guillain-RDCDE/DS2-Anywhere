@@ -129,6 +129,8 @@ Honesty, per the house style. The short recording's anomaly was not an empty blo
 
 So in production we do the responsible thing: fix the common case in the decoder, and **detect the exotic case** (`frame_count ∉ {0, 9, 10}`) to fall back to the reference decoder for those rare files, rather than emit something subtly wrong. The over-count case gets its own reverse-engineering session another day. A known, contained gap beats a silent one.
 
+> **Update.** That "another day" came. We cracked the over-count block by running the Olympus decoder inside a debugger we built from its own DLLs — it turned out to be a per-block re-anchoring rule (`2 × byte1 − 6`) that no spec ever wrote down. The detector and the Windows fallback described above have since been **deleted**: the native demuxer now handles every structural case, including segment-boundary files the count detector never even flagged. The full story is **[07 — Cracking the re-sync block](07-cracking-the-resync-block.md)**.
+
 ---
 
 ## What to take away

@@ -1,0 +1,68 @@
+Follow-up to the v2 DS2 series: two demuxer corrections needed for
+paused / voice-activated recordings, both now confirmed byte-for-byte
+against the live Olympus DssParser.dll.
+
+The v2 demuxer reads the QP block payload as a flat concatenation of
+506-byte payloads. That is correct only for continuous, gap-free
+recordings (which is what the bit-exact FATE validation used). Real
+dictation is voice-activated and full of pauses, and a paused file
+desyncs from the first pause to end-of-file. There are two
+manifestations of the same underlying rule:
+
+1. Empty blocks (frame_count == 0). A pause emits a block whose payload
+   is only a few continuation bytes (finishing the frame that straddles
+   the block boundary) followed by padding that must be discarded.
+   Concatenating the full payload shifts every later frame.
+   cont_size = 2*byte1 + 2*swap - 6  (swap == 0 in QP).
+   This is the same defect the codec spec attributes to the existing
+   libavformat/dss.c, never carried into the DS2 QP path.
+
+2. Re-sync blocks (the general rule). Every block re-anchors its frames
+   at payload offset 2*byte1 - 6; the bytes before the anchor are an
+   orphaned straddle tail to be skipped. On gap-free audio the anchor
+   always coincides with the running read position (hence the perfect
+   continuous-read validation), but at a segment boundary it jumps -
+   we measured +2 and +48 byte jumps on real files. The empty-block
+   case above is just the special instance where the anchor leaves no
+   fresh frames in the block.
+
+   Crucially, frame_count is NOT a reliable discriminator: we found
+   ordinary frame_count = 9/10 blocks that still carry a non-trivial
+   byte1 and must re-anchor. The Olympus parser's actual test is
+   "carried straddle-tail == this block's anchor (2*byte1-6); if not,
+   drop the in-flight partial frame and restart at the anchor", then
+   read up to frame_count frames but stop at the block end (frame_count
+   over-counts on resync blocks - e.g. a literal value of 19 - so the
+   block-end cap is the real limit; the count field is meaningless
+   except for the value 0).
+
+How this was confirmed: rather than guess, we re-hosted the Olympus
+DirectShow filters (DssParser.dll / DssDecoder.dll, from ODMS) in a
+process we controlled and hooked the parser at runtime with frida,
+capturing the exact file offset of every frame it emitted. The
+re-anchoring rule reproduces those offsets with zero divergence, and
+it is also visible directly in the decompiled block routine
+(FUN_10009910). This also explains the "distorted, duration doubled"
+symptom in the original trac #6091.
+
+A reference implementation of both corrections (with an 18-file
+OLD-vs-NEW regression corpus showing byte-identical output on every
+non-paused file, and the corrected output on paused ones) lives in the
+Rust decoder this work is based on. Full write-up, including the dead
+ends and the runtime-hooking method:
+
+  https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/07-cracking-the-resync-block.md
+
+I have intentionally not attached a C diff for correction (2): it
+should land with a FATE sample that contains a real re-sync block and
+an A/B against the Olympus reference across the boundary, and I would
+rather get that sample and verification right than send an untested
+demuxer change. The rule above is exact. Happy to provide a paused
+test vector and help validate.
+
+One honest caveat for completeness: with the demuxer corrected, a rare
+acoustic regime (a loud passage immediately after a pause) still shows
+a CODEC-side divergence from Olympus - not a demux issue (it persists
+when feeding the decoder the parser's exact frame bytes). It is
+isolated to the QP synthesis path and is being chased separately; it
+does not affect the demuxer corrections above.
