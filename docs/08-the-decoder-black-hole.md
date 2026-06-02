@@ -1,6 +1,6 @@
 # 08 — The handoff: one synthesis function between us and 100%
 
-> This is a working document, not a war story. Chapters 06 and 07 closed the demuxer: the native pipeline now turns DS2 bytes into frames exactly the way the Olympus parser does, confirmed against the real DLL. One thing remains — a single acoustic regime where the **decoder** (frames → audio) still diverges. Here is everything the next session needs to finish it, so nobody has to re-derive what we already know.
+> This is a working document, not a war story. **For the narrative, polished write-up of this same investigation, read the research paper: [09 — The re-sync excitation anomaly](09-the-resync-excitation-anomaly.md).** This page is the terse engineer's handoff. Chapters 06 and 07 closed the demuxer: the native pipeline now turns DS2 bytes into frames exactly the way the Olympus parser does, confirmed against the real DLL. One thing remains — a single acoustic regime where the **decoder** (frames → audio) still diverges. Here is everything the next session needs to finish it, so nobody has to re-derive what we already know.
 
 ---
 

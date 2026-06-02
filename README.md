@@ -42,7 +42,8 @@ Three months later, this repo shows how to take that work and put it in producti
   - **(1)** how the codec was reverse-engineered (the genius part — not ours);
   - **(2)** how we integrated it into a production transcription pipeline that processes real-world dictations daily (the engineering part — ours);
   - **(3)** [**the empty-block bug**](docs/06-the-empty-block-bug.md) — a decoder that was bit-exact on every file we tested and *still* wrong on paused recordings, the ten dead ends, and the twelve-line fix (a detective story worth reading even if you never touch DS2);
-  - **(4)** [**cracking the re-sync block**](docs/07-cracking-the-resync-block.md) — the sequel: we ran the closed-source Olympus decoder *inside a debugger we built from its own DLLs*, hooked it at the instruction level, and read the format's last undocumented demux rule straight off the silicon — then deleted the Windows fallback for good.
+  - **(4)** [**cracking the re-sync block**](docs/07-cracking-the-resync-block.md) — the sequel: we ran the closed-source Olympus decoder *inside a debugger we built from its own DLLs*, hooked it at the instruction level, and read the format's last undocumented demux rule straight off the silicon — then deleted the Windows fallback for good;
+  - **(5)** [**📄 the re-sync excitation anomaly — research paper**](docs/09-the-resync-excitation-anomaly.md) — the format's last unsolved secret, written up in full: how *analysis-by-synthesis* proved the decoder's filter is flawless and the bug is entirely in the excitation, nine falsified hypotheses, the smoking-gun frame dissection, the hidden state machine, and the exact architectural wall that blocks the final inch. Didactic enough for a newcomer, precise enough to resume from. **The one we haven't beaten — yet.**
 - 🛠 **[src/](src/)** — the actual integration code: CLI, cron job, HTTP daemon, admin web UI. Sanitized of organization-specific bits; the patterns are reusable as-is.
 - 📊 **[benchmarks/](benchmarks/)** — performance comparison (WASM vs native, the chain we use vs the commercial Windows chain), and the validation campaign run on 35 real-world files.
 
@@ -112,6 +113,7 @@ If you have…
 - **5 minutes** → just read this README.
 - **20 minutes** → [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md) — the genius part.
 - **30 minutes (the detective stories)** → [docs/06](docs/06-the-empty-block-bug.md) + [docs/07](docs/07-cracking-the-resync-block.md) — two production bugs hunted to ground, one of them by running the closed-source decoder inside a debugger we built from its own DLLs. Reads like fiction; every line happened.
+- **the open case** → [📄 docs/09 — the re-sync excitation anomaly](docs/09-the-resync-excitation-anomaly.md) — the one bug still standing, as a full research paper: the analysis-by-synthesis proof, nine falsified hypotheses, the hidden state machine, and the wall.
 - **60 minutes** → all of [docs/](docs/), in order. From "impossible for ten years" to "production in a weekend".
 
 ## Credits — proper order
