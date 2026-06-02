@@ -89,12 +89,19 @@ That makes the remaining step decoder-bound: **hook `FUN_10018800`'s output (or 
 
 ## The exact next steps (the tooling already exists)
 
-**The blocker to clear first.** Hooking the decoder's internals needs the real decoder to actually *run* on our chosen file. That is the wall: the Olympus `DssParser` and `DssDecoder` filters **refuse to connect** in a hand-built graph (`ConnectDirect` parser-out → decoder-in returns `VFW_E_NO_ACCEPTABLE_TYPES`), and `Render`-ing the source builds a graph in which `DssDecoder` is *loaded but never driven* (the decode loop `FUN_10016540` never fires — verified by hooking it). So we can get the parser to run and emit frames (that's how chapter 07 was cracked), but we have **not** yet made the Olympus *decoder* execute inside a process we can instrument. Until that's solved, its intermediates are out of reach.
+**The blocker — and why it's architectural, not effort.** Hooking the decoder's internals needs the real decoder to actually *run* on our chosen file in a process we control. A dedicated push proved this is blocked by the filters' design, not by a missing trick. Every standard DirectShow way to wire `DssParser` → `DssDecoder` fails:
 
-Two ways through:
+- `ConnectDirect(parser_out, decoder_in, NULL)` → **`VFW_E_NO_ACCEPTABLE_TYPES`** — the two pins share **no** media type at all.
+- `Connect(parser_out, grabber_in)` with the grabber pinned to PCM (intelligent connect, which would auto-insert the decoder) → **`VFW_E_CANNOT_CONNECT`** — no chain of intermediate filters bridges them.
+- `Render(parser_out)` with only the parser present → fails to build a chain; it only "succeeds" when a `NullRenderer` is pre-added, in which case `Render` connects parser→null directly and the decoder is **loaded but never driven** (`FUN_10016540` never fires).
 
-- **A. Make the Olympus decoder run hookably.** Options: insert a SampleGrabber and let `Render` negotiate the full chain (parser→decoder→grabber→null) so the decoder is actually pulled; or feed the decoder its input media type explicitly (capture the type `Render` negotiates, pass it to `ConnectDirect`); or inject frida into NCH Switch itself (it *does* decode — it resisted injection before, retry with a gadget/early-attach). Once the decode loop fires, hook the per-frame synthesis and **A/B its intermediates against the open `f64` decoder on one bad-band frame** to localise synthesis-vs-upstream, then read the disassembly.
-- **B. A/B two independent open decoders.** Build Patrick Domack's FFmpeg C port and decode the same paused file. If its bad band differs from Kieran's Rust/Python port, the divergence between the two *is* the bug (one of them does the missing step). Cheaper than RE — no decoder hooking needed.
+So the Olympus filters do not interconnect through any public DirectShow mechanism — they're wired by the Olympus application's own code with proprietary media-type negotiation. That's the wall. (`SetSyncSource(NULL)` to defeat headless audio-renderer starvation was tried too; moot, since the chain never builds.)
+
+The remaining ways through are all **multi-day sub-projects**, not quick hooks:
+
+- **A. DLL-proxy instrumentation.** Build a 32-bit proxy that forwards every COM export to the real decoder DLL and inline-hooks its synthesis to log the excitation buffer (`+0x36b8`). Needs a Windows cross-compiler (mingw) + COM export forwarding + an inline-hook trampoline — *and* it must target whichever DLL the host actually runs (NCH Switch appears to decode via `dss32.dll`, not the `DssDecoder.dll` we disassembled, so the hook RVAs would need re-deriving on `dss32.dll`).
+- **B. Drive + hook the Olympus app (ODMS).** ODMS builds the graph correctly (the filters work in it). Needs GUI automation to make it play the file headless, and ODMS may also resist instrumentation. (NCH Switch is confirmed anti-debug — frida spawn and attach both fail.)
+- **C. A/B two independent open ports.** Already done and refuted: Patrick's C port and Kieran's Rust/Python port are byte-identical, so there's no divergence to mine.
 
 **Getting a reference (this works headless).** NCH Switch on the VM produces the ground-truth WAV even from a disconnected RDP session: `switch.exe -convert <in.ds2> -outfolder <dir> -format .wav -overwrite` via `Start-Process` (see `swconv.ps1`). With that WAV, the whole windowed-SNR / per-frame-correlation / energy-ratio A/B in this chapter is reproducible in minutes.
 
