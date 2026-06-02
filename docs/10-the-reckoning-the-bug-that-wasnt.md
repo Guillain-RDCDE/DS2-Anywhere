@@ -2,7 +2,7 @@
 
 *How we built a debugger-grade oracle from the closed-source decoder's own DLLs to settle a seven-second mystery — and how the cheapest test in the world, listening, dissolved it. The most honest chapter in this repo.*
 
-> **Abstract.** Chapter 09 is a research paper that corners a residual DS2 decoding bug with real rigour: analysis-by-synthesis proves the spectral filter is bit-exact, nine hypotheses are falsified, the divergence is pinned to a single re-sync block, and the open question is handed off cleanly. It is also, in its central claim, **wrong** — and we are leaving it standing, unedited except for a banner, because the honest value is in *how* a careful investigation can chase a measurement that was never a sound. This chapter is the reckoning. We did the thing chapter 09 said was blocked: we made the real Olympus decoder run under our own instrumentation (Linux + Wine + gdb). It taught us the format's connection ritual at the instruction level — and it taught us something sharper: the oracle we built to judge our decoder needed judging itself. Then we stopped measuring and *listened*. The file was clean. There was no seven-second wound. The "10× excitation collapse" our math screamed about was a person walking to a quieter corner of the room. We tell you exactly how far the rigour went, exactly where it fooled us, and exactly what we can and cannot prove. **No bug — and an honest accounting of why we thought there was one.**
+> **Abstract.** Chapter 09 is a research paper that corners a residual DS2 decoding bug with real rigour: analysis-by-synthesis proves the spectral filter is bit-exact, nine hypotheses are falsified, the divergence is pinned to a single re-sync block, and the open question is handed off cleanly. It is also, in its central claim, **wrong** — and we are leaving it standing, unedited except for a banner, because the honest value is in *how* a careful investigation can chase a measurement that was never a sound. This chapter is the reckoning. We went after the wall chapter 09 stopped at: we re-hosted Olympus's own filters under our own instrumentation (Linux + Wine + gdb) and read the format's connection ritual off the silicon. The parser gave up its secrets; the decoder gave up something sharper — it refused to run faithfully at all without a registry key we didn't have, and the moment we forced it, the oracle we'd built to judge our decoder produced output we already knew was false. The thing we made to check our reference *was itself an unreliable reference.* Then we stopped measuring and *listened*. The file was clean. There was no seven-second wound. The "10× excitation collapse" our math screamed about was a person walking to a quieter corner of the room. We tell you exactly how far the rigour went, exactly where it fooled us, and exactly what we can and cannot prove. **No bug — and an honest accounting of why we thought there was one.**
 
 ---
 
@@ -51,7 +51,7 @@ It builds the graph by hand and feeds it the file:
 [ our own sink filter ]  ← every PCM sample the real decoder produces
 ```
 
-Under Wine the whole thing is a normal Linux process. gdb attaches. Breakpoints land in Olympus's own code. We could, at last, single-step the closed decoder.
+Under Wine the whole thing is a normal Linux process. gdb attaches. Breakpoints land in Olympus's own code, and — this is the part that paid off — `DssParser` runs far enough to single-step and read live. The *decoder* had one more gate, as Part 3 explains; what we got faithfully instrumented was the parser, and that alone was worth the trip.
 
 **One discipline mattered enough to call out:** Wine randomises module load addresses on every run (ASLR). Every breakpoint address has to be computed from the module base the harness prints at startup — never hard-coded. Hard-code one and you set a breakpoint in the void and conclude, wrongly, that a function never runs. (We did this once. It cost an evening.)
 
@@ -71,6 +71,8 @@ That knowledge is real and it stays. Then the oracle turned on us.
 Here is the turn, and it is the whole chapter.
 
 To make `DssDecoder` accept the parser's output and actually decode, its `CheckMediaType` (`DssDecoder.dll+0x2760`, reached from `ReceiveConnection`) runs a classifier (`+0xfd50` → validator `+0xfe70`) that **chooses the CELP mode** (it returns 1, 2, or 3) and, to do so, consults an Olympus configuration key in the Windows registry — a key that does not exist on a bare Wine install. Missing key → the decoder rejects the connection with `0x83e807d0`. The graph won't run.
+
+This wall is real and it is specific to these two filters. Patrick Domack — who wrote the independent FFmpeg C port of the codec — reports the same from his own attempts: `DssParser`/`DssDecoder` refuse to run under Wine for him, while other codecs (NCH, Sony LPEC) load and run fine. Two people, two setups, the same gate. It is not a missing trick on either side; it is the filters' design.
 
 The tempting fix — and we took it, to get *anything* moving — was to patch past the check: overwrite the validator's entry with `mov al, 1; ret` so it always says "yes." The graph connected. The decoder ran. Audio came out.
 
@@ -134,7 +136,7 @@ Strip away the bug that wasn't, and the saga's ledger is overwhelmingly positive
 
 - **Two real demux bugs, found and fixed**, bit-exact, in production, fixing files the format had silently corrupted for a decade — and a nine-year-old FFmpeg ticket explained in the process.
 - **The format's connection and demux rituals, read off the silicon** — the `IFileSourceFilter` reach-around, the `427032AF` descriptor, the `2 × byte1 − 6` re-anchoring law — knowledge that exists nowhere else in public.
-- **A reusable oracle.** The Wine + gdb harness that runs the closed Olympus decoder as an instrumentable Linux process is built and kept. If a file ever genuinely misbehaves, we no longer have a wall — we have a debugger pointed at the vendor's own code. (To make it a *faithful* oracle, import Olympus's real registry configuration so the classifier selects the true CELP mode; do not lobotomise the validator — Part 3 is why.)
+- **A reusable oracle.** The Wine + gdb harness that re-hosts Olympus's own DirectShow filters as an instrumentable Linux process is built and kept: the **parser** runs and reads faithfully today; the **decoder** still needs Olympus's real registry configuration imported to connect in its true CELP mode (do **not** lobotomise the validator — Part 3 is why). So it's not a finished decoder oracle — but if a file ever genuinely misbehaves, we no longer have a wall, we have a debugger pointed at the vendor's own code and a known last step to take.
 - **A correctly scoped FFmpeg contribution.** The upstream patch needs the demux fixes (that follow-up is real and in flight). It does **not** need an excitation fix for a bug that doesn't exist — a correction we're glad we made *before* asking reviewers to chase a phantom.
 
 The format gave up its real secrets. The one we thought it was still holding, it never had.
