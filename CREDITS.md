@@ -36,7 +36,7 @@ Patrick has asked to stay off the `ffmpeg-devel` mailing list. The mailing-list 
 
 ## The supporting cast
 
-### lamejs ([zhuker](https://github.com/zhuker/lamejs) / [breezystack fork](https://github.com/breezystack/lamejs))
+### lamejs ([zhuker](https://github.com/zhuker/lamejs) / [@breezystack/lamejs](https://www.npmjs.com/package/@breezystack/lamejs))
 
 Pure-JavaScript MP3 encoder. LGPL. Used in the optional WASM chain. ~50× slower than native libmp3lame, which is why we ultimately encode with ffmpeg — but for cases where you can't have native binaries (browsers, edge functions), lamejs is excellent.
 

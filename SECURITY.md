@@ -18,7 +18,7 @@ We'll acknowledge within 7 days, investigate, and credit you in the fix's releas
 This project depends on upstream codecs and tools (`dss-codec`, `lamejs`, `ffmpeg`). Vulnerabilities in those should be reported upstream:
 
 - `dss-codec` / `dss-codec-wasm` → <https://github.com/hirparak/dss-codec/issues>
-- `lamejs` → <https://github.com/breezystack/lamejs/issues>
+- `lamejs` → <https://www.npmjs.com/package/@breezystack/lamejs>
 - `ffmpeg` → <https://ffmpeg.org/security.html>
 
 ## Threat model

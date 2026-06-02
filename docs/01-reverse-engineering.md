@@ -72,7 +72,7 @@ It is slow, careful work. The reward is that you no longer depend on anyone else
 
 ## 4. The methodology, step by step
 
-This is reconstructed from reading Hirpara's [CODEC_SPECIFICATION.md](https://github.com/hirparak/dss-codec/blob/main/dss-codec/CODEC_SPECIFICATION.md), the code itself, and standard reverse-engineering practice.
+This is reconstructed from reading Hirpara's [CODEC_SPECIFICATION.md](https://github.com/hirparak/dss-codec/blob/master/dss-codec/CODEC_SPECIFICATION.md), the code itself, and standard reverse-engineering practice.
 
 ### Step 1 — Identify the right binaries
 
@@ -210,7 +210,7 @@ Hirpara redistributes nothing from Olympus — only the spec he wrote and a from
 
 - Upstream codec: <https://github.com/hirparak/dss-codec> (MIT, Kieran Hirpara, Feb 2026)
 - WASM build: <https://github.com/gaspardpetit/dss-codec-wasm> (MIT, Gaspard Petit)
-- Full codec spec: [`CODEC_SPECIFICATION.md`](https://github.com/hirparak/dss-codec/blob/main/dss-codec/CODEC_SPECIFICATION.md) in the upstream repo
+- Full codec spec: [`CODEC_SPECIFICATION.md`](https://github.com/hirparak/dss-codec/blob/master/dss-codec/CODEC_SPECIFICATION.md) in the upstream repo
 - Ghidra: <https://ghidra-sre.org/>
 - FFmpeg ticket #6091 (the nine-year wait): <https://trac.ffmpeg.org/ticket/6091>
 - CELP background: ITU-T G.729 specification, freely available
