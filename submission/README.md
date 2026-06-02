@@ -1,10 +1,11 @@
 ﻿# submission/
 
-> Pre-submission staging for the upstream FFmpeg patch
-> (`ffmpeg-devel@ffmpeg.org`). **Nothing here has been sent yet.** This
-> folder is the workbench where the cover letter, the FATE plan, the
-> changelog entries, and the FATE sample are being prepared in the
-> open, for review by anyone interested.
+> Staging for the upstream FFmpeg patch (`ffmpeg-devel@ffmpeg.org`).
+> The **v2 patch** has been sent; two **demuxer corrections** for paused
+> recordings (empty-block + `byte1` re-anchoring) have been written up and
+> flagged to the thread (2026-06-02); the consolidated **v3 patch** that
+> folds them in is still being prepared. This folder is the open workbench:
+> cover letter, FATE plan, changelog, FATE sample, and the follow-up notes.
 
 ## Status
 
@@ -15,11 +16,13 @@
 | End-to-end build + native `ffmpeg -i file.ds2 out.wav` | Tested on the FATE sample (37 s, decoded in 38 ms; cold-cache real-time ratio not benchmarked) |
 | FATE sample, publicly-redistributable | [`fate/sample-qp.ds2`](fate/sample-qp.ds2), DS2 QP 16 kHz, 37 s, 129 KiB, md5 `23eab82c…` |
 | FATE reference output (per-frame CRC) | [`fate/fate-ds2-qp.ref`](fate/fate-ds2-qp.ref) — 2319 lines (6 header + 2313 frame entries) |
-| `.patch` artefact for `git am` / `git send-email` | [`patches/0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demuxer.patch`](patches/0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demuxer.patch) — 65 KiB, applies cleanly on `69bdb05`, verified end-to-end (fresh clone → `git am` → `make` → decode FATE sample → md5 matches `fate-ds2-qp.ref` byte-for-byte) |
+| `.patch` artefact for `git am` / `git send-email` | [`patches/v2-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch`](patches/v2-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch) — applies cleanly on `69bdb05`, verified end-to-end (fresh clone → `git am` → `make` → decode FATE sample → md5 matches `fate-ds2-qp.ref` byte-for-byte) |
 | Mail body ready to copy-paste | [`patches/email-body.txt`](patches/email-body.txt) + [`patches/email-subject.txt`](patches/email-subject.txt) (see [`patches/README.md`](patches/README.md) for procedure) |
 | Cover letter (long form, for the repo) | [`00-cover-letter.md`](00-cover-letter.md) — body fenced between `BEGIN MAIL BODY` / `END MAIL BODY` |
 | Changelog + doc + header entries drafted | [`02-changelog-and-doc.md`](02-changelog-and-doc.md) |
-| Patch sent to `ffmpeg-devel` | **v2 sent (date TBD)** — supersedes v1 (2026-05-25 21:35 CEST). v2 brings Patrick Domack EOF + rounding fixes; decoder now bit-perfect vs Hirpara reference (zero diff on FATE sample). v1 lore: [archive](https://lists.ffmpeg.org/lore/ffmpeg-devel/20260525193532.1845986-1-guillain@poulpe.us/T/#u). |
+| Patch sent to `ffmpeg-devel` | **v2 sent** — supersedes v1 (2026-05-25 21:35 CEST). v2 brings Patrick Domack EOF + rounding fixes; decoder bit-perfect vs Hirpara reference (zero diff on FATE sample). v1 lore: [archive](https://lists.ffmpeg.org/lore/ffmpeg-devel/20260525193532.1845986-1-guillain@poulpe.us/T/#u). |
+| Demuxer corrections for paused recordings | **Written up + flagged to the v2 thread 2026-06-02.** Both turned out to be one rule (per-block `byte1` re-anchoring; empty-block is its zero-fresh-frames case), confirmed byte-for-byte against the live Olympus parser. Notes: [`03-v3-empty-block-fix.md`](03-v3-empty-block-fix.md), [`04-resync-block-byte1.md`](04-resync-block-byte1.md); story: [`docs/07`](../docs/07-cracking-the-resync-block.md); follow-up mail: [`patches/email-body-v3-followup.txt`](patches/email-body-v3-followup.txt). Reference implementation (Rust) is live in production with an 18-file OLD-vs-NEW regression corpus. |
+| v3 patch (folds both demux corrections) | Pending — needs a paused FATE sample + boundary A/B before sending. |
 
 [reli]: https://github.com/hirparak/dss-codec/issues/1
 

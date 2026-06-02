@@ -167,4 +167,8 @@ But notice how much the hole shrank. Chapter 06 left an entire *file class* fall
 
 ---
 
+Next: **[08 — The decoder black hole](08-the-decoder-black-hole.md)** — the one divergence left (a loud passage right after a pause), why it's a *codec* not a demux problem, and the exact warm-rig next steps to close it.
+
+---
+
 *Two files, one invented debugger, one retracted theory. The format's last secret was a number that wasn't a count, hiding in a byte everyone read and nobody used. 🔓*

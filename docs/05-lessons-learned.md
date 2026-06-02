@@ -209,7 +209,7 @@ The five-year version of this project should still have this paragraph in the ch
 
 ---
 
-There's one more chapter, written later — after a bug we didn't see coming surfaced in production months in: [06 — The empty-block bug](06-the-empty-block-bug.md). It's the most detailed debugging walkthrough in this repo, and the most reusable. Otherwise, back to [the README](../README.md) for the source tree, the install steps, and the next steps.
+There are three more chapters, written later — after bugs we didn't see coming surfaced in production months in. They're the most detailed debugging walkthroughs in this repo, and the most reusable: [06 — The empty-block bug](06-the-empty-block-bug.md), its sequel [07 — Cracking the re-sync block](07-cracking-the-resync-block.md) (where we wiretapped the real Olympus decoder to read the format's last undocumented rule), and the open handoff [08 — The decoder black hole](08-the-decoder-black-hole.md). Otherwise, back to [the README](../README.md) for the source tree, the install steps, and the next steps.
 
 ---
 

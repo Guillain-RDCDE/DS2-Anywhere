@@ -111,6 +111,7 @@ If you have…
 
 - **5 minutes** → just read this README.
 - **20 minutes** → [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md) — the genius part.
+- **30 minutes (the detective stories)** → [docs/06](docs/06-the-empty-block-bug.md) + [docs/07](docs/07-cracking-the-resync-block.md) — two production bugs hunted to ground, one of them by running the closed-source decoder inside a debugger we built from its own DLLs. Reads like fiction; every line happened.
 - **60 minutes** → all of [docs/](docs/), in order. From "impossible for ten years" to "production in a weekend".
 
 ## Credits — proper order

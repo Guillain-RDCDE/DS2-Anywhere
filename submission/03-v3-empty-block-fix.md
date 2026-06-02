@@ -1,9 +1,12 @@
-# Submission follow-up — v3 must add empty-block handling to the QP demuxer
+# Submission follow-up — v3 must fix the QP demuxer for paused recordings
 
 **Status:** v2 (sent 2026-05-26, message-id `<20260526151029.449720-1-guillain@poulpe.us>`) is
 bit-exact against the Rust reference and clean on continuous recordings, but a production bug
-surfaced afterward that affects **paused / voice-activated DS2 QP recordings**. Full story and
-proof: [`docs/06-the-empty-block-bug.md`](../docs/06-the-empty-block-bug.md).
+surfaced afterward that affects **paused / voice-activated DS2 QP recordings**. Two corrections
+are needed, and they turned out to be the *same* rule (see §2 and
+[`04-resync-block-byte1.md`](04-resync-block-byte1.md)): empty-block handling and per-block
+`byte1` re-anchoring. Full story and proof: [`docs/06`](../docs/06-the-empty-block-bug.md) and
+[`docs/07`](../docs/07-cracking-the-resync-block.md).
 
 ## What's wrong in v2
 
@@ -38,9 +41,14 @@ Verified bit-exact against the licensed Olympus decoder across an 18-minute paus
    read-through (no empty blocks) — it would pass with *or* without the fix, so it can't guard
    this regression. v3 needs a short, permissively-licensed recording with at least one
    deliberate pause, plus its regenerated `framecrc` reference.
-2. **The over-count edge** (`frame_count` larger than a block can hold, seen once at a 28-block
-   group boundary) is **not** covered by this fix and is not in any reference. It is rare; until
-   it's reverse-engineered it should be detected and routed to a fallback rather than mis-decoded.
-   Not a blocker for v3, but worth a comment in the demuxer.
+2. **The over-count edge** (`frame_count` larger than a block can hold) — **now solved.** It was
+   not a separate edge case at all but the general form of the same rule: every QP block
+   re-anchors its frames at payload offset `2 * byte1 - 6`, and the empty-block handling above is
+   just the special instance where that anchor leaves zero fresh frames. This was confirmed
+   byte-for-byte against the live Olympus parser; full write-up and the precise rule for the C
+   demuxer are in [`04-resync-block-byte1.md`](04-resync-block-byte1.md) and
+   [`docs/07`](../docs/07-cracking-the-resync-block.md). v3 should fold **both** corrections into
+   the demuxer (they share one code path), with a FATE sample that contains a real re-sync block.
 
-A heads-up flagging all of this was sent to the ffmpeg-devel thread as a reply to v2.
+A complementary write-up flagging both corrections (empty-block + byte1 re-anchoring) was sent to
+the ffmpeg-devel thread as a reply to v2 on 2026-06-02 ([`patches/email-body-v3-followup.txt`](patches/email-body-v3-followup.txt)).
