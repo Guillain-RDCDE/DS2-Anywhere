@@ -45,7 +45,7 @@ Three months later, this repo shows how to take that work and put it in producti
   - **(4)** [**cracking the re-sync block**](docs/07-cracking-the-resync-block.md) — the sequel: we ran the closed-source Olympus decoder *inside a debugger we built from its own DLLs*, hooked it at the instruction level, and read the format's last undocumented demux rule straight off the silicon — then deleted the Windows fallback for good;
   - **(5)** [**the bug that wasn't**](docs/10-the-reckoning-the-bug-that-wasnt.md) — the saga's twist, and the chapter we're proudest of. A residual "decoder bug" on paused recordings was cornered across [a full research paper](docs/09-the-resync-excitation-anomaly.md) — *analysis-by-synthesis* proving the filter bit-exact, nine falsified hypotheses, a hidden state machine — and then **overturned**. We did what the paper said was impossible: ran the closed Olympus decoder under our own instrumentation (Linux + Wine + gdb), watched a reference lie to us in the *exact shape* of the symptom, and finally settled it the cheapest way there is — by **listening**. There was no bug; the "seven-second wound" was a person stepping away from the microphone. We kept every wrong turn in the record, framed. The most honest read in the repo, and the most useful if you reverse-engineer for a living.
 - 🛠 **[src/](src/)** — the actual integration code: CLI, cron job, HTTP daemon, admin web UI. Sanitized of organization-specific bits; the patterns are reusable as-is.
-- 📊 **[benchmarks/](benchmarks/)** — performance comparison (WASM vs native, the chain we use vs the commercial Windows chain), and the validation campaign run on 35 real-world files.
+- 📊 **[docs/benchmarks/](docs/benchmarks/)** — performance comparison (WASM vs native, the chain we use vs the commercial Windows chain), and the validation campaign run on 35 real-world files.
 
 ## Pipeline at a glance
 
@@ -122,7 +122,7 @@ The intellectual heavy-lifting belongs entirely to:
 
 - **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that made all of this possible. MIT, February 2026.
 - **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) (WASM build) and [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (Rust crate with CI, streaming, decryption — the one our Dockerfile uses). MIT.
-- **Patrick Domack** — [FFmpeg C port gist](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) — independent C implementation of the spec, being [prepared for upstream FFmpeg submission from this repo](submission/). MIT / public domain.
+- **Patrick Domack** — [FFmpeg C port gist](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) — independent C implementation of the spec, being [prepared for upstream FFmpeg submission from this repo](ffmpeg-upstream/). MIT / public domain.
 - **lamejs** ([@breezystack/lamejs](https://www.npmjs.com/package/@breezystack/lamejs)) — pure-JS MP3 encoder. LGPL.
 - **[FFmpeg](https://ffmpeg.org/)** — the encoder we use in the native chain. LGPL.
 

@@ -65,7 +65,7 @@ and instead picks up everything in a configurable input directory.
 - Target `main`.
 - One topic per PR. Don't bundle unrelated fixes.
 - Update docs if your change is user-visible.
-- Update `benchmarks/conversion-results.json` only if you actually re-ran the validation campaign (no synthetic numbers — see the [validation chapter](docs/03-validation-campaign.md) for the philosophy here).
+- Update `docs/benchmarks/conversion-results.json` only if you actually re-ran the validation campaign (no synthetic numbers — see the [validation chapter](../docs/03-validation-campaign.md) for the philosophy here).
 - The CI must pass. If you can't make it pass locally, push anyway and we'll help.
 
 ## Credit

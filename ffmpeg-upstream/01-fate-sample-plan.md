@@ -37,7 +37,7 @@ and the corresponding reference output as
    `0x604`, parsed cleanly by both Hirpara's Rust reference and
    Patrick's C port.
 2. **QP is the format we want covered first.** In the in-the-wild
-   corpus we have access to (see [`../benchmarks/conversion-results.json`][bench]),
+   corpus we have access to (see [`../docs/benchmarks/conversion-results.json`][bench]),
    QP dominates DS2 traffic; SP is a long-tail mode. A FATE rule for
    QP covers the high-leverage case.
 3. **Public, persistent URL.** dictate.com.au has hosted this file on
@@ -48,7 +48,7 @@ and the corresponding reference output as
    vendor produced specifically as a public artefact for codec
    testing.
 
-[bench]: ../benchmarks/conversion-results.json
+[bench]: ../docs/benchmarks/conversion-results.json
 
 ## Licensing position
 
@@ -121,7 +121,7 @@ pipeline)
 ```
 Decode success: 35/35.
 Mean conversion ratio: 1.5x real time on a single core (Rust path).
-Full per-file results: ../benchmarks/conversion-results.json.
+Full per-file results: ../docs/benchmarks/conversion-results.json.
 Note: this dataset measures decode success and timing, not byte-for-byte
 diff vs Rust. The byte-for-byte argument is the FATE-sample analysis
 above.
