@@ -16,7 +16,7 @@ docker compose up --build
 Use the FATE sample we ship for the upstream FFmpeg submission:
 
 ```bash
-cp submission/fate/sample-qp.ds2 examples/
+cp ffmpeg-upstream/fate/sample-qp.ds2 examples/
 ```
 
 It's a 37-second DS2 QP file (16 kHz mono, 129 KiB), originally hosted as a public test artefact on dictate.com.au's CDN, with neutral content ("DICTATE" as author metadata, no third-party identification). We use it both as a FATE regression test for the FFmpeg patch and as a known-good starting point for anyone trying the toolchain.

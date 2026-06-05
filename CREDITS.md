@@ -30,7 +30,7 @@ The hand-written C port of the DS2 decoder + demuxer for FFmpeg — `libavcodec/
 
 This is the work that closes the loop: once Patrick's C lands upstream, **DS2 / DS2 Pro becomes a first-class audio format in any FFmpeg build, anywhere**. No more decoder bundling, no more native binary in our Dockerfile, no more "first install this dependency". Just `ffmpeg -i recording.ds2 out.wav`.
 
-Patrick has asked to stay off the `ffmpeg-devel` mailing list. The mailing-list submission (cover letter, FATE sample, validation campaign) is being prepared in this repo at [`submission/`](submission/) and will go out under the submitter's name, on Patrick's behalf, with his explicit consent. See [submission/README.md](submission/README.md) for the chain of credit going to FFmpeg.
+Patrick has asked to stay off the `ffmpeg-devel` mailing list. The mailing-list submission (cover letter, FATE sample, validation campaign) is being prepared in this repo at [`ffmpeg-upstream/`](ffmpeg-upstream/) and will go out under the submitter's name, on Patrick's behalf, with his explicit consent. See [ffmpeg-upstream/README.md](ffmpeg-upstream/README.md) for the chain of credit going to FFmpeg.
 
 ---
 

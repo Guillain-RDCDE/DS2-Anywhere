@@ -44,7 +44,7 @@ documented in this repository.
     URL:     https://github.com/gaspardpetit/dss-codec
     License: MIT
 
-  FFmpeg DS2 C port (used in submission/ for upstream FFmpeg merge)
+  FFmpeg DS2 C port (used in ffmpeg-upstream/ for upstream FFmpeg merge)
     Author:  Patrick Domack
     URL:     https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9
     License: MIT / public domain (explicit relicensing grant:

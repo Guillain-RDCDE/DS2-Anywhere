@@ -39,7 +39,7 @@ Each entry contains:
 
 ## Speed (WASM chain measurements)
 
-These are the WASM-chain numbers — what we shipped with on day one before [the switch to native](../docs/04-wasm-vs-native.md).
+These are the WASM-chain numbers — what we shipped with on day one before [the switch to native](../04-wasm-vs-native.md).
 
 | Metric | Value |
 |---|---|
@@ -51,7 +51,7 @@ These are the WASM-chain numbers — what we shipped with on day one before [the
 
 ## Speed (native chain — same files, after the switch)
 
-After switching to the native binary + ffmpeg (see [docs/04](../docs/04-wasm-vs-native.md)), the same conversion is **~3-5× faster** depending on the file:
+After switching to the native binary + ffmpeg (see [docs/04](../04-wasm-vs-native.md)), the same conversion is **~3-5× faster** depending on the file:
 
 | Test | WASM chain | Native chain | Speedup |
 |---|---|---|---|

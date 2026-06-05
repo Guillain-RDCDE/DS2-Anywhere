@@ -16,4 +16,4 @@ Brief technical approach if non-trivial.
 - [ ] Docs updated if user-visible behavior changed
 - [ ] `CREDITS.md` updated if a new third-party dependency was added
 - [ ] No real credentials, real client data, or real file paths in the diff (placeholders only)
-- [ ] No claims of test coverage that weren't actually measured (`benchmarks/` stays honest)
+- [ ] No claims of test coverage that weren't actually measured (`docs/benchmarks/` stays honest)
