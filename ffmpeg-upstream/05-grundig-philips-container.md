@@ -1,9 +1,15 @@
 # 05 — Grundig/Philips container support (`libavformat/ds2.c`)
 
 Status: **patch ready** —
-[`patches/v3-0002-avformat-ds2-grundig-philips-header-sizes.patch`](patches/v3-0002-avformat-ds2-grundig-philips-header-sizes.patch)
-(applies on top of the v2 demuxer; `git apply --check` clean). Needs a GR/PH
-FATE sample before it goes to ffmpeg-devel.
+[`patches/avformat-ds2-grundig-philips-header-sizes.patch`](patches/avformat-ds2-grundig-philips-header-sizes.patch)
+(`From:`/`Subject:`/`Signed-off-by:` set, `git apply --check` clean on top of the
+v2 demuxer). Needs a GR/PH FATE sample before it goes to ffmpeg-devel.
+
+This is a **standalone** demuxer follow-up, independent of the empty-block /
+`byte1` re-sync v3 work (`03`, `04`, `patches/email-body-v3-followup.txt`) — that
+series is about *paused-recording* decoding, this one is about *container header
+size*. Both apply on top of v2; fold whichever you re-roll first. It deliberately
+carries **no** version-series number so it doesn't claim a slot in your v3 thread.
 
 ## Why
 

@@ -1,6 +1,6 @@
-From 90d5011e3fe22537aa908b786d6b83d8569359c0 Mon Sep 17 00:00:00 2001
-From: Guillain <guillain@poulpe.us>
-Date: Sat, 6 Jun 2026 14:30:18 +0200
+From 00287cda801f45afbc6ce4037531293e7af4f659 Mon Sep 17 00:00:00 2001
+From: Guillain d'Erceville <guillain@poulpe.us>
+Date: Sat, 6 Jun 2026 14:39:38 +0200
 Subject: [PATCH] avformat/ds2: support Grundig/Philips (GR/PH) header sizes
 
 The first byte of a DSS/DS2 file is the header size in 512-byte blocks.
@@ -13,6 +13,8 @@ No codec change: the CELP frames are standard DS2-QP / DSS-SP. The same
 generalization in the hirparak/gaspardpetit Rust reference decodes a real
 GR/PH DS2-QP file bit-exact vs the licensed Olympus decoder (corr 1.0).
 Needs a GR/PH FATE sample before ffmpeg-devel submission.
+
+Signed-off-by: Guillain d'Erceville <guillain@poulpe.us>
 ---
  libavformat/ds2.c | 35 +++++++++++++++++++++++++----------
  1 file changed, 25 insertions(+), 10 deletions(-)
