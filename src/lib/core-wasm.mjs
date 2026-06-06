@@ -13,13 +13,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { decode, decodeWithPassword, inspect } from "dss-codec";
 import lamejs from "@breezystack/lamejs";
+import { normalizeGrph } from "./grph.mjs";
 
 /**
  * Inspect a DS2/DSS file without fully decoding it.
  * @returns {Promise<{format:string, encryption:string, nativeRate:number, bytes:number}>}
  */
 export async function inspectFile(path) {
-  const bytes = new Uint8Array(await readFile(path));
+  let bytes = new Uint8Array(await readFile(path));
+  bytes = normalizeGrph(bytes) || bytes; // GR/PH -> Olympus layout
   const head = bytes.subarray(0, Math.min(bytes.length, 4096));
   const ins = inspect(head);
   const info = {
@@ -40,7 +42,8 @@ export async function inspectFile(path) {
  * @returns {Promise<{format:string, sampleRate:number, samples:number, duration_s:number, mp3_bytes:number}>}
  */
 export async function convertFile(inPath, outPath, { bitrate = 64, password = null } = {}) {
-  const bytes = new Uint8Array(await readFile(inPath));
+  let bytes = new Uint8Array(await readFile(inPath));
+  bytes = normalizeGrph(bytes) || bytes; // GR/PH -> Olympus layout
 
   let result;
   if (password) {

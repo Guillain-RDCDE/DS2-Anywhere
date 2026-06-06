@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { withNormalizedFile } from "./grph.mjs";
 
 const NATIVE = "/usr/local/bin/dss-decode-native";
 const FFMPEG = "/usr/bin/ffmpeg";
@@ -19,10 +20,8 @@ const FFMPEG = "/usr/bin/ffmpeg";
 function detectEncryptionFromHeader(headBuf) {
   if (headBuf.length < 4) return "unknown";
   const a = headBuf[0], b = headBuf[1], c = headBuf[2], d = headBuf[3];
-  // \x03ds2 = 03 64 73 32
-  if (a === 0x03 && b === 0x64 && c === 0x73 && d === 0x32) return "none";
-  // \x03dss = 03 64 73 73
-  if (a === 0x03 && b === 0x64 && c === 0x73 && d === 0x73) return "none";
+  // \x0Nds2 / \x0Ndss — plain, any version byte (Olympus 2/3, Grundig/Philips 6/7)
+  if (b === 0x64 && c === 0x73 && (d === 0x32 || d === 0x73)) return "none";
   // \x03enc = 03 65 6e 63
   if (a === 0x03 && b === 0x65 && c === 0x6e && d === 0x63) return "ds2_aes";
   return "unknown";
@@ -52,7 +51,14 @@ export async function inspectFile(path) {
   const head = fd.subarray(0, Math.min(fd.length, 16));
   const encryption = detectEncryptionFromHeader(head);
 
-  const info = await run(NATIVE, ["--info", path]);
+  // GR/PH containers are normalized to a temp file so --info recognizes them.
+  const { path: infoPath, cleanup } = await withNormalizedFile(path);
+  let info;
+  try {
+    info = await run(NATIVE, ["--info", infoPath]);
+  } finally {
+    await cleanup();
+  }
   if (info.code !== 0) {
     // --info often fails on encrypted files — return what we know
     return { format: "", encryption, nativeRate: 0, bytes: st.size };
@@ -81,11 +87,13 @@ export async function inspectFile(path) {
  */
 export async function convertFile(inPath, outPath, { bitrate = 64, password = null } = {}) {
   const tmpWav = join(tmpdir(), `core_dec_${randomBytes(6).toString("hex")}.wav`);
+  // GR/PH (Grundig/Philips) containers are rewritten to the Olympus layout first.
+  const { path: decPath, cleanup: cleanupNorm } = await withNormalizedFile(inPath);
   try {
     // Phase 1: decode -> WAV
     const decArgs = ["-O", tmpWav];
     if (password) decArgs.push("--password", password);
-    decArgs.push(inPath);
+    decArgs.push(decPath);
     const dec = await run(NATIVE, decArgs);
     if (dec.code !== 0) {
       const msg = (dec.stderr || dec.stdout || "").trim();
@@ -122,5 +130,6 @@ export async function convertFile(inPath, outPath, { bitrate = 64, password = nu
     };
   } finally {
     await unlink(tmpWav).catch(() => {});
+    await cleanupNorm();
   }
 }

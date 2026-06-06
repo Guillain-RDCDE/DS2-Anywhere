@@ -25,10 +25,30 @@ get_encryption() {
   local hdr
   hdr=$(head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
   case "$hdr" in
-    03647332|03647373) echo "none" ;;    # \x03ds2  or  \x03dss
+    ??647332|??647373) echo "none" ;;    # \x0Nds2 / \x0Ndss (any version byte)
     03656e63)          echo "ds2_aes" ;; # \x03enc
     *)                 echo "unknown" ;;
   esac
+}
+
+# Grundig/Philips ("GR/PH") containers use a larger header (first byte = header
+# size in 512-byte blocks, 6/7 instead of Olympus 2/3) with extra GR___ device
+# records before the audio. Rewrite to the standard Olympus layout (byte 0 = 3,
+# audio at 0x600) and echo the temp path; otherwise echo the original path.
+maybe_normalize() {
+  local f="$1" b0 magic
+  b0=$(head -c1 "$f" 2>/dev/null | od -An -tu1 | tr -d ' ')
+  magic=$(head -c4 "$f" 2>/dev/null | tail -c3)
+  if { [ "$magic" = "ds2" ] || [ "$magic" = "dss" ]; } && [ "${b0:-0}" -gt 3 ] && [ "${b0:-0}" -le 16 ]; then
+    local tmp
+    tmp=$(mktemp --suffix=.ds2 -t grph.XXXXXX) || { printf '%s' "$f"; return; }
+    head -c 1536 "$f" > "$tmp"                                          # keep 0x600 metadata header
+    printf '\003' | dd of="$tmp" bs=1 seek=0 count=1 conv=notrunc status=none  # standardize version byte
+    dd if="$f" bs=512 skip="$b0" status=none >> "$tmp"                  # audio after GR___ records
+    printf '%s' "$tmp"
+  else
+    printf '%s' "$f"
+  fi
 }
 
 # Parse argv
@@ -60,9 +80,16 @@ fi
 input="${positional[0]}"
 [ -f "$input" ] || die 1 "File not found: $input"
 
-# Detect format/encryption/rate via --info + magic bytes
+# Normalize GR/PH containers up front; everything below decodes from $decode_input.
 encryption=$(get_encryption "$input")
-info_out=$("$NATIVE" --info "$input" 2>&1)
+decode_input=$(maybe_normalize "$input")
+norm_tmp=""
+[ "$decode_input" != "$input" ] && norm_tmp="$decode_input"
+tmp_wav=""
+trap 'rm -f "${tmp_wav:-}" "${norm_tmp:-}"' EXIT
+
+# Detect format/rate via --info
+info_out=$("$NATIVE" --info "$decode_input" 2>&1)
 info_exit=$?
 fmt=""; rate=""
 if [ $info_exit -eq 0 ]; then
@@ -93,14 +120,13 @@ fi
 
 output="${positional[1]:-${input%.*}.mp3}"
 tmp_wav=$(mktemp --suffix=.wav -t conv-dss.XXXXXX)
-trap 'rm -f "$tmp_wav"' EXIT
 
 t0=$(date +%s%3N)
 
 # Phase 1: decode DS2/DSS -> WAV (native rate, mono 16-bit)
 pwd_arg=()
 [ -n "$password" ] && pwd_arg=(--password "$password")
-if ! err=$("$NATIVE" -O "$tmp_wav" "${pwd_arg[@]}" "$input" 2>&1); then
+if ! err=$("$NATIVE" -O "$tmp_wav" "${pwd_arg[@]}" "$decode_input" 2>&1); then
   if printf '%s' "$err" | grep -qiE 'encrypt|password'; then
     die 3 "Encrypted file, password invalid or required: $err"
   fi
