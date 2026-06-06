@@ -1,6 +1,9 @@
 # 05 — Grundig/Philips container support (`libavformat/ds2.c`)
 
-Status: **proposed**, needs a FATE sample before it goes to ffmpeg-devel.
+Status: **patch ready** —
+[`patches/v3-0002-avformat-ds2-grundig-philips-header-sizes.patch`](patches/v3-0002-avformat-ds2-grundig-philips-header-sizes.patch)
+(applies on top of the v2 demuxer; `git apply --check` clean). Needs a GR/PH
+FATE sample before it goes to ffmpeg-devel.
 
 ## Why
 
