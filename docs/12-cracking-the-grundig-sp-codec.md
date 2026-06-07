@@ -84,6 +84,17 @@ The output WAVs are **byte-for-byte identical** to Grundig's own decoder
 reimplementation of a codec that, until now, only Grundig's Windows software
 could read.
 
-> A Rust port (to sit beside the Olympus codec) is a direct transcription of the
-> spec above — `f64` throughout, `floor(x + 0.5)` rounding. Left as the obvious
-> next step.
+## Upstream
+
+A native FFmpeg decoder followed directly from the spec:
+[`ffmpeg-upstream/patches/avcodec-grundig_sp-decoder.patch`](../ffmpeg-upstream/patches/avcodec-grundig_sp-decoder.patch)
+— a new `AV_CODEC_ID_GRUNDIG_SP` decoder (`libavcodec/grundig_sp.c`) plus the
+`libavformat/dss.c` demuxer wiring (gated on header version 6, Olympus DSS left
+untouched), with a FATE test. It emits the codec's native 12 kHz and leaves the
+3:4 → 16 kHz device resample to libswresample. Its output is **bit-exact** to
+this Python reference (hence to Grundig's own decoder) on every sample; it builds
+clean and `git am`s onto FFmpeg master. Sent to ffmpeg-devel.
+
+A Rust port (to sit beside the Olympus codec in `dss-codec`) is the same direct
+transcription — `f64` throughout, `floor(x + 0.5)` rounding — and remains the one
+open follow-up.
