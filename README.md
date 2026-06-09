@@ -1,8 +1,33 @@
 # DS2-Anywhere
 
-> Decode Olympus DSS/DS2 dictation files anywhere — pure CLI, no Windows, no GUI, no commercial software. A production integration recipe for a format that was locked for ten years. 🔓
+> Open the dictation formats that stayed locked for thirty years — Olympus **DS2/DSS**
+> and now **Grundig DSS** — on any Linux box. No Windows, no GUI, no commercial
+> software. A production recipe *and* the reverse-engineering trail behind it. 🔓
 
 [![CI](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Latest release](https://img.shields.io/github/v/release/Guillain-RDCDE/DS2-Anywhere)](https://github.com/Guillain-RDCDE/DS2-Anywhere/releases) ![Status](https://img.shields.io/badge/status-production-green) ![Platform](https://img.shields.io/badge/platform-linux-blue)
+
+---
+
+A handful of strangers who never met picked a thirty-year-old lock — a proprietary
+voice codec that doctors, lawyers and police dictated billions of seconds into, and
+that no open tool on Earth could read. One person reverse-engineered the first piece.
+Others made it portable, then universal. We put it in production over a weekend — and
+then a lawyer in Germany dug an old recorder out of a drawer and handed us a codec
+**even the commercial software couldn't decode.** So we cracked that one too, in an
+afternoon, by interrogating the manufacturer's own decoder inside a debugger we built
+from its DLLs.
+
+All of it is in here: the working code, and exactly how it was done.
+
+## Pick your way in
+
+| | |
+|---|---|
+| 📖 **Read it like a thriller** | **[The Story →](docs/THE-STORY.md)** — no code, ~10 minutes. A locked format, a relay of strangers, a bug that turned out to be a human being, and a German lawyer's drawer. It really happened, and every twist links to the chapter that proves it. |
+| 🔧 **Follow the technical trail** | **[Go deeper ↓](#go-deeper-the-technical-trail)** — from "what even *is* a `.ds2` file" up to running a closed-source decoder under a debugger. Built to be readable if you've never reverse-engineered anything. |
+| 🛠 **Just use it** | **[30 seconds ↓](#try-it-in-30-seconds)** — drop a file in, get an MP3 out. |
+
+---
 
 ## Try it in 30 seconds
 
@@ -14,45 +39,21 @@ docker compose up --build
 # HTTP API: http://localhost:8765/health
 ```
 
-Drop a `.ds2` or `.dss` into `examples/` (the folder is mounted into both containers), then go to the web UI and convert.
-
-## Production install
+Drop a `.ds2` or `.dss` into `examples/` and convert it from the web UI. Or one file from the CLI:
 
 ```bash
-sudo ./src/bin/install.sh
+conv-dss-ds2-to-mp3 recording.ds2
+# [ds2_qp 16000Hz, 31.8min] recording.mp3  OK  (14.55 Mo en 10.3 s)
 ```
 
-Asks the half-dozen questions that actually matter — install dir, audio root, DB creds if you want mode 2, alert email — then drops the config, the cron, the systemd unit and the CLI symlink in place. Run it again, nothing breaks.
+Production install (config + cron + systemd + web UI): `sudo ./src/bin/install.sh`, or [docs/02-integration.md](docs/02-integration.md).
 
----
-
-## The ten-year lock
-
-In 2007, Olympus released the Digital Speech Standard 2 (`.ds2`) format for their professional dictation recorders. Proprietary codec, no public spec, no open decoder. Anyone who needed to process `.ds2` files on Linux or macOS had exactly one path: run Olympus DSS Player or NCH Switch through a Windows VM.
-
-In 2017, [FFmpeg ticket #6091](https://trac.ffmpeg.org/ticket/6091) was opened: *"Add DS2 codec support"*. It sat unimplemented for **nine years**.
-
-In **February 2026**, Kieran Hirpara published [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the first open-source DS2 decoder, reverse-engineered from the Olympus DLLs using Ghidra, and verified byte-for-byte against the official Olympus DirectShow filter.
-
-Three months later, this repo shows how to take that work and put it in production: replacing a fragile Windows VM + commercial GUI software with **a bash wrapper, a cron, and ~150 lines of glue**.
-
-## What's in this repo
-
-- 📖 **[docs/](docs/)** — a long-form, didactic walkthrough of:
-  - **(1)** how the codec was reverse-engineered (the genius part — not ours);
-  - **(2)** how we integrated it into a production transcription pipeline that processes real-world dictations daily (the engineering part — ours);
-  - **(3)** [**the empty-block bug**](docs/06-the-empty-block-bug.md) — a decoder that was bit-exact on every file we tested and *still* wrong on paused recordings, the ten dead ends, and the twelve-line fix (a detective story worth reading even if you never touch DS2);
-  - **(4)** [**cracking the re-sync block**](docs/07-cracking-the-resync-block.md) — the sequel: we ran the closed-source Olympus decoder *inside a debugger we built from its own DLLs*, hooked it at the instruction level, and read the format's last undocumented demux rule straight off the silicon — then deleted the Windows fallback for good;
-  - **(5)** [**the bug that wasn't**](docs/10-the-reckoning-the-bug-that-wasnt.md) — the saga's twist, and the chapter we're proudest of. A residual "decoder bug" on paused recordings was cornered across [a full research paper](docs/09-the-resync-excitation-anomaly.md) — *analysis-by-synthesis* proving the filter bit-exact, nine falsified hypotheses, a hidden state machine — and then **overturned**. We did what the paper said was impossible: ran the closed Olympus decoder under our own instrumentation (Linux + Wine + gdb), watched a reference lie to us in the *exact shape* of the symptom, and finally settled it the cheapest way there is — by **listening**. There was no bug; the "seven-second wound" was a person stepping away from the microphone. We kept every wrong turn in the record, framed. The most honest read in the repo, and the most useful if you reverse-engineer for a living.
-- 🛠 **[src/](src/)** — the actual integration code: CLI, cron job, HTTP daemon, admin web UI. Sanitized of organization-specific bits; the patterns are reusable as-is.
-- 📊 **[docs/benchmarks/](docs/benchmarks/)** — performance comparison (WASM vs native, the chain we use vs the commercial Windows chain), and the validation campaign run on 35 real-world files.
-
-## Pipeline at a glance
+## What it does, in one picture
 
 ```
                    BEFORE                                            AFTER
-                                                                    
-   .ds2 ─► SSHFS ─► Windows VM ─► Switch.exe                 .ds2 ─► cron (Linux) 
+
+   .ds2 ─► SSHFS ─► Windows VM ─► Switch.exe                 .ds2 ─► cron (Linux)
                        │                                              │
                        ▼                                              ▼
                   .wav (mono)                                   .mp3 (mono 64k)
@@ -62,76 +63,91 @@ Three months later, this repo shows how to take that work and put it in producti
                        │                                              │
                        ▼                                              ▼
                   glue script                              ready for transcription
-                       │                                              
-                       ▼                                              
-                  Whisper API                                         
 
    GUI app + Windows VM + SSHFS round-trip      bash + native binary, all local, ~10s/file
 ```
 
-## Quick start (CLI)
-
-Convert one file:
-
-```bash
-conv-dss-ds2-to-mp3 recording.ds2
-# [ds2_qp 16000Hz, 31.8min] recording.mp3  OK  (14.55 Mo en 10.3 s)
-```
-
-Inspect a file without decoding:
-
-```bash
-conv-dss-ds2-to-mp3 --inspect recording.ds2
-# format      : ds2_qp
-# chiffrement : none
-# freq. nat.  : 16000 Hz
-# taille      : 6754304 octets
-```
-
-Encrypted DS2 with password:
-
-```bash
-conv-dss-ds2-to-mp3 --password=mypwd recording.ds2
-```
-
-Full install + cron + web UI setup: [docs/02-integration.md](docs/02-integration.md).
-
-## Real-world numbers
-
-The decision to ship was based on **an A/B against the reference Windows implementation on the same source file**, not just a count of successful decodes. The full validation, in order of weight:
-
-1. **A/B vs Switch.exe** (same `.ds2`, both chains, both MP3s through the same Whisper API): transcripts are **functionally identical**. Switch.exe: 16.2 % low-confidence words. Our chain: 17.2 %. Within Whisper's own run-to-run variance. The two chains are interchangeable for any downstream pipeline.
-2. **Sample**: 35 real production dictations (32× DS2 QP + 3× DSS SP, 6 h 48 of audio total). **35 / 35** decoded successfully, zero failures. Sample is intentionally tight — DS2 files don't survive long in our pipeline (raw uploads archived after ~2 weeks), and the A/B against the reference was what carried the call, not the headcount.
-3. **Production**: ~3 200 cron passes since go-live, zero errors logged. Every new DS2 entering the system now goes through this chain. The Switch VM stays on standby, untouched.
-
-[Full methodology and results →](docs/03-validation-campaign.md)
-
-## The story, in three reads
-
-If you have…
-
-- **5 minutes** → just read this README.
-- **20 minutes** → [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md) — the genius part.
-- **30 minutes (the detective stories)** → [docs/06](docs/06-the-empty-block-bug.md) + [docs/07](docs/07-cracking-the-resync-block.md) — two production bugs hunted to ground, one of them by running the closed-source decoder inside a debugger we built from its own DLLs. Reads like fiction; every line happened.
-- **the twist** → [📄 docs/09 — the research paper](docs/09-the-resync-excitation-anomaly.md) then [docs/10 — the reckoning](docs/10-the-reckoning-the-bug-that-wasnt.md) — a rigorous case for a "last bug," then the chapter that overturns it: an instrumentable oracle built from the vendor's own DLLs, a reference that lied, and the cheapest decisive test in engineering. How careful work can be confidently wrong — and how to catch it.
-- **60 minutes** → all of [docs/](docs/), in order. From "impossible for ten years" to "production in a weekend".
-
-## Credits — proper order
-
-The intellectual heavy-lifting belongs entirely to:
-
-- **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that made all of this possible. MIT, February 2026.
-- **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) (WASM build) and [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (Rust crate with CI, streaming, decryption — the one our Dockerfile uses). MIT.
-- **Patrick Domack** — [FFmpeg C port gist](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) — independent C implementation of the spec, being [prepared for upstream FFmpeg submission from this repo](ffmpeg-upstream/). MIT / public domain.
-- **lamejs** ([@breezystack/lamejs](https://www.npmjs.com/package/@breezystack/lamejs)) — pure-JS MP3 encoder. LGPL.
-- **[FFmpeg](https://ffmpeg.org/)** — the encoder we use in the native chain. LGPL.
-
-This repo is a recipe. The recipe needs the ingredients above to exist at all. Full credit breakdown: [CREDITS.md](CREDITS.md).
-
-## License
-
-MIT. Same as the upstream codec. Fork, adapt, deploy, integrate — only please keep proper attribution to the codec authors.
+A Windows VM with commercial software in the loop, replaced by a bash wrapper, a cron, and a native binary — all local, ~10 s per file.
 
 ---
 
-*A decade of impossible, one bash command later. 🔓*
+## Go deeper: the technical trail
+
+**New to any of this?** A `.dss`/`.ds2` file is a voice recording squeezed *tiny* by
+a secret algorithm (a "codec"). "Decoding" it means rebuilding the original sound
+from those bytes — and to do that you need the algorithm, which the manufacturers
+never published. The whole trail below is the story of getting it anyway. You don't
+need a background in audio or reverse-engineering to follow it; each chapter starts
+from the ground.
+
+Climb at your own pace:
+
+1. **[The ten-year lock](docs/01-reverse-engineering.md)** — what a DS2 file is, why it
+   resisted, and how Kieran Hirpara reverse-engineered the codec from the Olympus DLLs
+   (the genius part — not ours).
+2. **[Putting it in production](docs/02-integration.md)** — turning a decoder into a
+   real pipeline: CLI, cron, daemon, the encode chain. The engineering part.
+3. **[The empty-block bug](docs/06-the-empty-block-bug.md)** — a decoder that was
+   bit-exact on every file we tested and *still* wrong on paused recordings. Ten dead
+   ends, a twelve-line fix. A detective story worth reading even if you never touch DS2.
+4. **[Cracking the re-sync block](docs/07-cracking-the-resync-block.md)** — the sequel:
+   we ran the closed-source Olympus decoder *inside a debugger we built from its own
+   DLLs*, and read the format's last undocumented rule straight off the silicon.
+5. **[The bug that wasn't](docs/10-the-reckoning-the-bug-that-wasnt.md)** — the twist,
+   and the chapter we're proudest of. A rigorous case for a "last bug" ([the research
+   paper](docs/09-the-resync-excitation-anomaly.md)), then *overturned* — there was no
+   bug; it was a person stepping away from the mic. How careful work can be confidently
+   wrong, and how to catch it.
+6. **[Cracking the Grundig SP codec](docs/12-cracking-the-grundig-sp-codec.md)** — the
+   finale. The Grundig grandfather format that *nobody* decoded — not us, not FFmpeg,
+   not even Olympus's own software. We extracted Grundig's decoder, ran it under a
+   debugger, patched out the instruction it used to delete its own evidence, and
+   rebuilt the codec **bit-exact**. Now a [native Python decoder](grundig/), an
+   [FFmpeg patch](ffmpeg-upstream/patches/avcodec-grundig_sp-decoder.patch), and a PR
+   to the upstream codec.
+
+> Short on time? **5 min** → this page · **20 min** → chapter 1 · **30 min** → the two
+> detective stories (3 & 4) · **the twist** → 5 · **the finale** → 6 · **everything** →
+> [docs/](docs/) in order, "impossible for thirty years" to "production in a weekend."
+
+## Real-world numbers
+
+The decision to ship rested on **an A/B against the reference Windows implementation
+on the same source file**, not a count of successful decodes:
+
+- **A/B vs Switch.exe** (same `.ds2`, both chains, both MP3s through the same Whisper
+  API): transcripts **functionally identical** — 16.2 % vs 17.2 % low-confidence words,
+  inside Whisper's own run-to-run variance. The chains are interchangeable downstream.
+- **35 / 35** real production dictations decoded (6 h 48 of audio), zero failures.
+- **~3 200** cron passes since go-live, zero errors. The Windows VM stays on standby,
+  untouched.
+
+For the Grundig codec: **byte-for-byte identical** to Grundig's own decoder on every
+sample. [Full methodology →](docs/03-validation-campaign.md)
+
+## What's in this repo
+
+- 📖 **[docs/](docs/)** — the full didactic trail above, plus [the benchmarks](docs/benchmarks/).
+- 🛠 **[src/](src/)** — the integration code: CLI, cron, HTTP daemon, admin web UI. Sanitized; the patterns are reusable as-is.
+- 🎙 **[grundig/](grundig/)** — the native Grundig DSS-SP decoder (pure Python, bit-exact) + its tables.
+- 🎬 **[ffmpeg-upstream/](ffmpeg-upstream/)** — the FFmpeg patches (DS2 container generalization + the Grundig SP decoder), staged for upstream.
+
+## Credits — proper order
+
+The intellectual heavy-lifting belongs to the people who opened the locks:
+
+- **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that started all of it. MIT, February 2026.
+- **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) + [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (the Rust crate our Dockerfile uses). MIT.
+- **Patrick Domack** — the [FFmpeg C port](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) of the spec. MIT / public domain.
+- **JulsRX** — the Grundig Digta owner who reported the file nobody could decode, and supplied the public sample that made cracking the Grundig codec possible.
+- **lamejs** (LGPL) and **[FFmpeg](https://ffmpeg.org/)** (LGPL) — the MP3 encoders.
+
+This repo is a recipe; the recipe needs the ingredients above to exist at all. Full breakdown: [CREDITS.md](CREDITS.md).
+
+## License
+
+MIT, same as the upstream codec. Fork, adapt, deploy — please keep attribution to the codec authors. We publish the clean reimplementations and the recovered specs, never the vendors' proprietary code.
+
+---
+
+*Thirty years of locked, one bash command later. The chain has to keep going. 🔓*
