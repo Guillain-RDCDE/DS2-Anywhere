@@ -6,11 +6,17 @@ file-format registry, so that DROID/Siegfried and digital-preservation tools can
 **identify** these files. Identification (knowing *what* a file is) is the first
 step archives need; this codec is currently unidentifiable by any registry.
 
-> How to submit: TNA accepts new-format information via the PRONOM "contribute"
-> route — <https://www.nationalarchives.gov.uk/PRONOM/Default.aspx> → *Submit
-> information about a file format*, or by email to the PRONOM team. Attach this
-> file, the [format specification](../SPEC-grundig-dss-sp.md), and one or two
-> sample files. This document is written to drop straight into that form.
+> **How to submit (current process, 2026).** The preferred route is GitHub:
+> open a pull request on [`digital-preservation/PRONOM_Research`](https://github.com/digital-preservation/PRONOM_Research)
+> adding a folder under `Submissions/`. A ready-to-copy folder is provided here:
+> [`pronom-submission/Grundig DSS-SP/`](pronom-submission/) (a DROID signature XML
+> + a Readme). Add a sample `.dss` under `Samples/` and open the PR.
+> Lighter alternatives: open an Issue on that repo, post on the
+> [PRONOM Google Group](https://groups.google.com/g/pronom), use the
+> [web submission form](https://www.nationalarchives.gov.uk/contact-us/submit-information-for-pronom/pronom-request-form/),
+> or email `pronom@nationalarchives.gov.uk` (best for private samples).
+> Contributions are licensed OGL 2.0 / CC0. This document is the human-readable
+> rationale; the machine-readable signature is in the folder above.
 
 ---
 
