@@ -237,9 +237,18 @@ def write_wav(path, pcm, sr=16000):
         f.write(b'fmt '); f.write(struct.pack('<IHHIIHH', 16, 1, 1, sr, sr*2, 2, 16))
         f.write(b'data'); f.write(struct.pack('<I', len(data))); f.write(data)
 
+def main(argv=None):
+    """CLI: grundig-dss in.dss [out.wav].  Defaults out.wav to the input stem."""
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv or argv[0] in ('-h', '--help'):
+        print('usage: grundig-dss in.dss [out.wav]   (decode Grundig DSS-SP to 16 kHz mono WAV)')
+        return 0 if argv[:1] in (['-h'], ['--help']) else 1
+    inp = argv[0]
+    out = argv[1] if len(argv) > 1 else (os.path.splitext(inp)[0] + '.wav')
+    pcm = decode_dss(inp)
+    write_wav(out, pcm)
+    print('decoded %d samples (%.1fs @ 16 kHz) -> %s' % (len(pcm), len(pcm) / 16000.0, out))
+    return 0
+
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print('usage: grundig_dss.py in.dss out.wav'); sys.exit(1)
-    pcm = decode_dss(sys.argv[1])
-    write_wav(sys.argv[2], pcm)
-    print('decoded %d samples -> %s' % (len(pcm), sys.argv[2]))
+    sys.exit(main())

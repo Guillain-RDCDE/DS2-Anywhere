@@ -9,12 +9,25 @@ identical** to the reference on every test sample. The full story and the
 recovered bitstream + synthesis spec are in
 [`../docs/12-cracking-the-grundig-sp-codec.md`](../docs/12-cracking-the-grundig-sp-codec.md).
 
+## Install
+
+```bash
+pip install grundig-dss        # from PyPI (pure-Python, zero dependencies)
+```
+
 ## Usage
 
 ```bash
-./decode.sh input.dss output.wav      # -> 16 kHz mono PCM WAV
-# or
-python3 grundig_dss.py input.dss output.wav
+grundig-dss input.dss [output.wav]    # console command (out defaults to the input stem)
+# or, without installing:
+python3 -m grundig input.dss output.wav
+./decode.sh input.dss output.wav
+```
+
+```python
+from grundig import decode_dss, write_wav
+pcm = decode_dss("recording.dss")     # list[int], 16 kHz mono 16-bit
+write_wav("recording.wav", pcm)
 ```
 
 ## Files

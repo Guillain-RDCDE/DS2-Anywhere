@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grundig-dss"
+version = "1.0.0"
+description = "Bit-exact native decoder for Grundig DSS-SP (PH9607) dictation audio — .dss to 16 kHz WAV, no Windows and no vendor software."
+readme = "grundig/README.md"
+requires-python = ">=3.7"
+license = { text = "MIT" }
+authors = [{ name = "Guillain-RDCDE" }]
+keywords = ["dss", "grundig", "digta", "dictation", "codec", "celp", "audio", "decoder", "speech", "reverse-engineering"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Conversion",
+    "Topic :: System :: Archiving",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Guillain-RDCDE/DS2-Anywhere"
+Repository = "https://github.com/Guillain-RDCDE/DS2-Anywhere"
+Specification = "https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/SPEC-grundig-dss-sp.md"
+"The story" = "https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/12-cracking-the-grundig-sp-codec.md"
+
+[project.scripts]
+grundig-dss = "grundig.grundig_dss:main"
+
+[tool.setuptools]
+packages = ["grundig"]
+
+[tool.setuptools.package-data]
+grundig = ["gtables.json"]
