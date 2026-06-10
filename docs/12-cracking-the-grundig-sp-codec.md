@@ -96,5 +96,14 @@ this Python reference (hence to Grundig's own decoder) on every sample; it build
 clean and `git am`s onto FFmpeg master. Sent to ffmpeg-devel.
 
 A Rust port (to sit beside the Olympus codec in `dss-codec`) is the same direct
-transcription — `f64` throughout, `floor(x + 0.5)` rounding — and remains the one
-open follow-up.
+transcription — `f64` throughout, `floor(x + 0.5)` rounding — and is up as
+[hirparak/dss-codec PR #12](https://github.com/hirparak/dss-codec/pull/12).
+
+## The formal specification
+
+The behaviour recovered here is written up as a standalone, implementation-grade
+spec — the first public one for this codec — in
+[`docs/SPEC-grundig-dss-sp.md`](SPEC-grundig-dss-sp.md), with a
+[PRONOM registry submission](preservation/PRONOM-submission.md) so that
+digital-preservation tools (DROID/Siegfried) can identify Grundig `.dss` files,
+which no registry can currently recognise.

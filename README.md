@@ -131,6 +131,7 @@ sample. [Full methodology →](docs/03-validation-campaign.md)
 - 🛠 **[src/](src/)** — the integration code: CLI, cron, HTTP daemon, admin web UI. Sanitized; the patterns are reusable as-is.
 - 🎙 **[grundig/](grundig/)** — the native Grundig DSS-SP decoder (pure Python, bit-exact) + its tables.
 - 🎬 **[ffmpeg-upstream/](ffmpeg-upstream/)** — the FFmpeg patches (DS2 container generalization + the Grundig SP decoder), staged for upstream.
+- 📐 **[the formal spec](docs/SPEC-grundig-dss-sp.md)** — the world's first public specification of the Grundig DSS-SP codec (bit-exact), plus a [PRONOM submission](docs/preservation/PRONOM-submission.md) so digital-preservation tools can identify these files at all.
 
 ## Credits — proper order
 
