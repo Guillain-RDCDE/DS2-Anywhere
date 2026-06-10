@@ -20,6 +20,13 @@ yarn-debug.log*
 yarn-error.log*
 .npm/
 
+# Python (packaging build artefacts)
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+
 # Rust build artefacts (if anyone builds the native binary locally)
 target/
 

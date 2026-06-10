@@ -1,0 +1,52 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'vendor/**', '.github/workflows/pages.yml']
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vendor/dss-codec-wasm
+      - name: Install wasm-bindgen-cli (must match the crate version)
+        run: cargo install wasm-bindgen-cli --version 0.2.118 --locked || cargo install wasm-bindgen-cli --version 0.2.118
+      - name: Build wasm
+        run: |
+          cargo build --manifest-path vendor/dss-codec-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          wasm-bindgen --target web --out-dir web/pkg --out-name dss_codec_wasm \
+            vendor/dss-codec-wasm/target/wasm32-unknown-unknown/release/dss_codec_wasm.wasm
+      - run: touch web/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

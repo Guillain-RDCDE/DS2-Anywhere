@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DS2-Anywhere — decode Olympus / Grundig dictation in your browser</title>
+<meta name="description" content="Drop an Olympus .ds2/.dss or Grundig .dss dictation file and decode it to audio, entirely in your browser. No upload, no install. Even encrypted DS2.">
+<style>
+  :root{ --bg:#0f1117; --card:#171a23; --ink:#e8e6e1; --mut:#9aa0ab; --accent:#b8433e; --ok:#3ea36b; --line:#262a36; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       display:flex;min-height:100vh;flex-direction:column;align-items:center;padding:32px 18px}
+  .wrap{width:100%;max-width:680px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.4px}
+  h1 .lock{color:var(--accent)}
+  .sub{color:var(--mut);margin:0 0 24px}
+  .sub a{color:var(--accent)}
+  #drop{border:2px dashed var(--line);border-radius:16px;background:var(--card);padding:48px 24px;text-align:center;
+        cursor:pointer;transition:.15s border-color,.15s background}
+  #drop:hover,#drop.hot{border-color:var(--accent);background:#1c2030}
+  #drop .big{font-size:18px}
+  #drop .hint{color:var(--mut);font-size:14px;margin-top:8px}
+  .pill{display:inline-block;font-size:12px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 10px;margin:3px}
+  #out{margin-top:22px;display:none}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:14px}
+  .row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .k{color:var(--mut)} .v{font-weight:600}
+  .fmt{color:var(--ok)}
+  audio{width:100%;margin-top:14px}
+  .btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border:0;border-radius:10px;
+       padding:11px 18px;font-weight:600;cursor:pointer;margin-top:14px}
+  .err{color:#ff8a84}
+  .muted{color:var(--mut);font-size:13px}
+  footer{color:var(--mut);font-size:13px;margin-top:34px;text-align:center}
+  footer a{color:var(--accent)}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
+        border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DS2-Anywhere <span class="lock">🔓</span></h1>
+  <p class="sub">Decode Olympus & Grundig dictation files in your browser — nothing is uploaded, nothing is installed.
+     <a href="https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/THE-STORY.md">The story →</a></p>
+
+  <div id="drop" tabindex="0" role="button" aria-label="Choose or drop a dictation file">
+    <div class="big">Drop a dictation file here, or click to choose</div>
+    <div class="hint">.ds2 · .dss — Olympus DSS / DS2 (SP & QP), encrypted DS2, Grundig DSS-SP</div>
+    <div style="margin-top:12px">
+      <span class="pill">Olympus DSS-SP</span><span class="pill">DS2-SP / QP</span>
+      <span class="pill">🔐 Encrypted DS2</span><span class="pill">Grundig DSS-SP</span>
+    </div>
+  </div>
+  <input id="file" type="file" accept=".ds2,.dss,application/octet-stream" hidden>
+
+  <div id="out"></div>
+
+  <footer>
+    Everything runs locally via a 196&nbsp;KB WebAssembly decoder.
+    The Grundig codec is decoded <a href="https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/12-cracking-the-grundig-sp-codec.md">bit-exact</a> —
+    no open or commercial tool could read it before.
+    <br><a href="https://github.com/Guillain-RDCDE/DS2-Anywhere">Source on GitHub</a>
+  </footer>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

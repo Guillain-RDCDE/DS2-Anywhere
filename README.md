@@ -25,7 +25,8 @@ All of it is in here: the working code, and exactly how it was done.
 |---|---|
 | 📖 **Read it like a thriller** | **[The Story →](docs/THE-STORY.md)** — no code, ~10 minutes. A locked format, a relay of strangers, a bug that turned out to be a human being, and a German lawyer's drawer. It really happened, and every twist links to the chapter that proves it. |
 | 🔧 **Follow the technical trail** | **[Go deeper ↓](#go-deeper-the-technical-trail)** — from "what even *is* a `.ds2` file" up to running a closed-source decoder under a debugger. Built to be readable if you've never reverse-engineered anything. |
-| 🛠 **Just use it** | **[30 seconds ↓](#try-it-in-30-seconds)** — drop a file in, get an MP3 out. |
+| 🌐 **Decode one right now** | **[Open the in-browser decoder →](https://guillain-rdcde.github.io/DS2-Anywhere/)** — drop a `.ds2`/`.dss` (Olympus, Grundig, even encrypted) and get audio back. Nothing uploaded, nothing installed. |
+| 🛠 **Run it yourself** | **[30 seconds ↓](#try-it-in-30-seconds)** — drop a file in, get an MP3 out. |
 
 ---
 
