@@ -176,4 +176,4 @@ The chain has to keep going. That's the whole point.
 
 ---
 
-*Want to see exactly how each piece was done? → [the technical deep-dive](../README.md#go-deeper-the-technical-trail).*
+*Want to see exactly how each piece was done? → [the technical deep-dive](../README.md#the-technical-trail).*
