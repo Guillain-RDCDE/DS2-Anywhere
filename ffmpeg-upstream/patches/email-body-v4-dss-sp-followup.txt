@@ -38,8 +38,10 @@ fix is byte-identical to the current decoder on gap-free files and on
 every DS2 file (different demuxer), so it carries no regression risk
 for the existing FATE samples.
 
-A standalone DSS SP FATE sample with a pause would need uploading to
-samples.ffmpeg.org to cover this; happy to coordinate as with the DS2
-series.
+For FATE coverage I have a 15-second paused DSS SP sample ready to
+upload to samples.ffmpeg.org (header anonymised, content neutral): it
+starts clean, takes one VOX pause mid-clip, and recovers -- so it
+exercises exactly the empty-block / re-sync path this patch adds.
+Happy to coordinate the upload as with the DS2 series.
 
 Thanks,

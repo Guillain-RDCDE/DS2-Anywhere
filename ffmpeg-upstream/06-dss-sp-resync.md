@@ -41,15 +41,26 @@ The reference implementation (Rust) is the one-branch `DssSpStreamDemuxer::proce
 fix now live in production, with the same OLD-vs-NEW byte-identity regression property as
 the empty-block and DS2 work.
 
-## Status / what's needed before sending
+## FATE sample (obtained)
 
-Same gate as the v3 DS2 patch, and the reason this isn't fired off blind:
+`fate/sample-dss-sp-paused.dss` — a 15.7 s, 54-block excerpt of a real paused DSS SP
+recording, **header fully anonymised** (author, dates, comment and codec fields zeroed;
+`strings` returns nothing) and the audio content confirmed neutral (no names, addresses
+or case detail). It starts on a re-sync block (clean cold start) and takes one VOX pause
+(empty block) mid-clip, with clean audio before and after — so it exercises exactly the
+empty-block + re-sync path upstream `dss.c` currently mishandles, and shows the recovery.
+Ready to upload to `samples.ffmpeg.org/A-codecs/DSS/`. Our Rust reference decodes its PCM
+to md5 `f05fb3bb8a50150c60b72d8249b8a511` (sanity anchor; the FATE `.ref` is regenerated
+from the patched FFmpeg build).
 
-- **A publicly-redistributable paused DSS SP FATE sample.** The file that surfaced this
-  (a client dictation) is confidential and cannot be shipped to
-  `samples.ffmpeg.org`. A short, non-confidential paused DSS SP recording is needed to
-  wire `fate-dss-sp-paused` and prove the boundary A/B.
-- **A build + `git am` + decode test on FFmpeg HEAD**, as done for v2.
+## What's left before the patch goes out
 
-Until both are in hand, this rides along with the pending v3 follow-up rather than going
-out untested. The mail body is drafted in `patches/email-body-v4-dss-sp-followup.txt`.
+- **Build FFmpeg HEAD + apply the SP demux change + regenerate the FATE reference**, and
+  confirm unpatched `dss.c` garbles this sample while the patched build matches the
+  Olympus ground truth. (Unlike our Rust baseline — which already had the empty-block
+  continuation handling — stock `dss.c` has *no* pause handling at all, so it desyncs on
+  this sample; that is what makes it a meaningful regression test.)
+- **`git send-email`** to ffmpeg-devel (no SMTP configured on this machine yet).
+
+The mail body is drafted in `patches/email-body-v4-dss-sp-followup.txt`. This rides with
+the pending v3 DS2 follow-up rather than going out untested.
