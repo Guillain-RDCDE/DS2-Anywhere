@@ -1,0 +1,45 @@
+Subject: [PATCH] avformat/dss: fix DSS SP demux of paused (VOX) recordings
+
+Hi,
+
+Follow-up to the DS2 series, but this one is about the *existing* DSS
+support already in the tree: libavformat/dss.c (the DSS SP demuxer,
+Oleksij Rempel, 2014) has the same paused-recording defect we just
+fixed in the DS2 QP path, and for the same reason.
+
+dss_sp_read_packet() reads the audio area as a flat concatenation of
+506-byte block payloads (skipping the 6-byte block header). That is
+correct only for continuous, gap-free recordings. Real Olympus
+dictation is voice-activated: when the speaker pauses, the recorder
+emits a block with frame_count == 0 (header byte[2]) whose payload is
+only a short continuation tail followed by padding, and the *next*
+block restarts the frame grid at its own anchor. The current demuxer
+reads straight through both, so the SP stream desyncs from the first
+pause and every sample after it is wrong (audible garble after the
+pause; the rest of the file is fine).
+
+The rule is the same one the DS2 follow-up describes, and it is the
+one the codec spec already attributes to this file (dss.c, empty
+blocks): every block re-anchors its frames at payload offset
+2*byte1 - 6 (header byte[1]); the block *following* an empty
+(frame_count == 0) block drops the in-flight straddle tail and
+restarts at that anchor. frame_count is not a reliable discriminator
+on its own (it over-counts on resync blocks); the empty marker on the
+preceding block is what triggers the restart.
+
+How this was confirmed: we re-hosted the Olympus DirectShow filter
+(DssParser.dll, from ODMS) in a 32-bit DirectShow graph and hooked the
+frame-sizer routine with frida, capturing the exact byte position of
+every frame the real parser emits on a 16-minute paused .DSS
+(40,620 frames). The emitted positions reproduce the rule above to
+~99% (the residual is the header-straddling frames, which by
+construction are not contiguous in a header-stripped payload). The
+fix is byte-identical to the current decoder on gap-free files and on
+every DS2 file (different demuxer), so it carries no regression risk
+for the existing FATE samples.
+
+A standalone DSS SP FATE sample with a pause would need uploading to
+samples.ffmpeg.org to cover this; happy to coordinate as with the DS2
+series.
+
+Thanks,

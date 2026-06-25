@@ -1,0 +1,23 @@
+Hey — quick follow-up to the DS2 re-sync work.
+
+Turns out the *DSS SP* path has the exact same hole. A real voice-activated
+.DSS (Olympus DPM, lots of pauses) garbled for a stretch right after one pause,
+clean everywhere else — same signature as the DS2 count=19 file.
+
+We re-hosted DssParser.dll the same way (32-bit Python + comtypes graph + frida,
+this time fully headless over SSH) and hooked the frame-sizer at +0x9890. Pulled
+40,620 frames from the live parser and read the positions off directly:
+
+  every block that follows an empty (frame_count==0) block re-syncs at its
+  2*byte1-6 anchor, dropping the previous block's tail.
+
+i.e. it's chapter-07's re-sync rule, never ported to the SP demuxer. One branch
+in DssSpStreamDemuxer fixes it; byte-identical on gap-free files and on all DS2,
+so it ships with the same safety property as before. Reproduces the parser to
+~99% (the rest is header-straddling frames, unsearchable by construction).
+
+Full write-up in docs/13. The same fix applies to upstream FFmpeg's
+libavformat/dss.c (the original Rempel DSS SP demuxer) — drafting a v4 follow-up
+to the ffmpeg-devel thread now.
+
+Cheers.
