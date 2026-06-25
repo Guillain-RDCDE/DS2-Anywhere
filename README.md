@@ -1,5 +1,7 @@
 # DS2-Anywhere
 
+![DS2-Anywhere — decode Olympus DSS / DS2 dictation files on Linux, pure CLI, no GUI](docs/assets/banner.png)
+
 > Open the dictation formats that stayed locked for thirty years — Olympus **DS2/DSS**
 > and now **Grundig DSS** — on any Linux box. No Windows, no GUI, no commercial
 > software. A production recipe *and* the reverse-engineering trail behind it. 🔓
