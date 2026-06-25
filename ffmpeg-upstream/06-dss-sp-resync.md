@@ -53,14 +53,31 @@ Ready to upload to `samples.ffmpeg.org/A-codecs/DSS/`. Our Rust reference decode
 to md5 `f05fb3bb8a50150c60b72d8249b8a511` (sanity anchor; the FATE `.ref` is regenerated
 from the patched FFmpeg build).
 
-## What's left before the patch goes out
+## Built, tested and SENT (2026-06-25)
 
-- **Build FFmpeg HEAD + apply the SP demux change + regenerate the FATE reference**, and
-  confirm unpatched `dss.c` garbles this sample while the patched build matches the
-  Olympus ground truth. (Unlike our Rust baseline — which already had the empty-block
-  continuation handling — stock `dss.c` has *no* pause handling at all, so it desyncs on
-  this sample; that is what makes it a meaningful regression test.)
-- **`git send-email`** to ffmpeg-devel (no SMTP configured on this machine yet).
+Submitted to `ffmpeg-devel@ffmpeg.org` as a standalone `[PATCH]` from
+`Guillain d'Erceville <guillain@poulpe.us>`. The artefact is
+[`patches/v4-0001-avformat-dss-fix-DSS-SP-paused-resync.patch`](patches/v4-0001-avformat-dss-fix-DSS-SP-paused-resync.patch)
+(applies cleanly on FFmpeg HEAD `b2b3780`, 2026-06-25).
 
-The mail body is drafted in `patches/email-body-v4-dss-sp-followup.txt`. This rides with
-the pending v3 DS2 follow-up rather than going out untested.
+Verification on the anonymised paused sample, built from the patch on HEAD:
+
+- **No-op on gap-free audio.** Patched output is **byte-identical to stock** up to the
+  first pause (the first 13.31 s / 556 frames of the sample), and only diverges after it.
+  No block is empty on continuous audio, so the new branch is never entered.
+- **Correct across the pause.** Stock `dss.c` desyncs at the pause and stays wrong to EOF
+  (per-second correlation vs the Olympus-validated reference drops from `1.00` to `~0`);
+  the patched build stays at `~1.00` through and past the pause.
+- **Confirmed against the live Olympus parser** (`DssParser.dll`, 40,620 captured frames):
+  the emitted frame positions match the re-anchoring rule.
+
+The fix is the empty-block (`frame_count == 0`) skip + re-sync at the next block's anchor
+`2*byte1 (+2*swap)`, restarting the byte-swap parity — the same re-anchoring
+`dss_read_seek()` already does. The FATE reference (framecrc of the patched output) is
+[`fate/fate-dss-sp-paused.ref`](fate/fate-dss-sp-paused.ref); the sample
+[`fate/sample-dss-sp-paused.dss`](fate/sample-dss-sp-paused.dss) is ready to upload to
+`samples.ffmpeg.org/A-codecs/DSS/` so a `fate-dss-sp-paused` test can be wired up.
+
+(`patches/email-body-v4-dss-sp-followup.txt` was the earlier prose-follow-up draft; the
+patch went out as a proper standalone `[PATCH]` instead — the commit message is
+self-contained.)
