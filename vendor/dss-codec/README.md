@@ -191,4 +191,4 @@ FFmpeg's built-in `dss_sp` decoder does **not** work for DS2 files. The Olympus 
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+MIT — see [LICENSE](LICENSE).

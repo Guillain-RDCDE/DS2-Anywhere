@@ -38,7 +38,7 @@ npm install dss-codec
 
 - Hosted demo: <https://gaspardpetit.github.io/dss-codec-wasm/>
 
-The repository includes a plain HTML reference integration in [`examples/simple-html`](./examples/simple-html). It inspects DSS and DS2 files in the browser, prompts for a password when needed, decodes to PCM, builds a WAV for playback, and draws a waveform locally in the browser.
+The repository includes a plain HTML reference integration in [`examples/simple-html`](https://github.com/gaspardpetit/dss-codec-wasm/tree/main/examples/simple-html). It inspects DSS and DS2 files in the browser, prompts for a password when needed, decodes to PCM, builds a WAV for playback, and draws a waveform locally in the browser.
 
 - Local demo: `npm run demo`
 - Standalone demo build: `npm run build:standalone`
