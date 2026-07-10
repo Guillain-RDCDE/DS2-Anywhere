@@ -154,6 +154,18 @@ Kieran — the man who picked the first lock and assumed no one would care — r
 *"Please send it up. I'm still a little overwhelmed with all the amazing work that
 is going on."*
 
+And then, quietly, the chain reversed direction. Months after we thought the DSS
+demux was closed for good, **Patrick** — the same person who wrote the FFmpeg C
+port — opened a pull request fixing a way of encoding a pause that our own decoder
+had never even noticed: a short block, padded with `0xFF`, that we'd been reading as
+sound. He'd found the piece we skipped. We measured it against three months of real
+dictations, wired it into production, and wrote it up — [the compact
+block](14-the-compact-block-pause.md), the only fix in this whole story we didn't
+find ourselves.
+
+That's the thing that's easy to miss about a relay of strangers: it doesn't run one
+way. You hand someone a piece, and one day, without asking, they hand one back.
+
 ---
 
 ## Why this is here
