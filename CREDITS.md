@@ -32,6 +32,8 @@ This is the work that closes the loop: once Patrick's C lands upstream, **DS2 / 
 
 Patrick has asked to stay off the `ffmpeg-devel` mailing list. The mailing-list submission (cover letter, FATE sample, validation campaign) is being prepared in this repo at [`ffmpeg-upstream/`](ffmpeg-upstream/) and will go out under the submitter's name, on Patrick's behalf, with his explicit consent. See [ffmpeg-upstream/README.md](ffmpeg-upstream/README.md) for the chain of credit going to FFmpeg.
 
+**Also — the DSS SP compact-block fix ([hirparak/dss-codec#14](https://github.com/hirparak/dss-codec/pull/14)).** A third way a DSS SP recording encodes a pause: a short block padded with `0xFF`, which our own decoder read as audio and desynced the rest of the file on. Patrick found it and fixed the demux; we validated it against 90 days of production traffic and adopted it, gated so it touches only the files that were actually broken. The story is [chapter 14](docs/14-the-compact-block-pause.md).
+
 ---
 
 ## The supporting cast
