@@ -18,7 +18,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone --depth=1 https://github.com/gaspardpetit/dss-codec.git . && \
+
+# Pinned to a known-good commit of the codec fork, fetched by SHA, for a
+# reproducible build. This commit was shadow-benched against 316 real DSS/DS2
+# recordings (0 garbling, no panics) — see docs/15-the-relay-runs-backward.md.
+# A floating `--depth=1` of the default branch would let a future upstream
+# regression reach this image silently on the next build; that is exactly the
+# class of bug docs/15 is about. Bump this on purpose, and re-run the bench.
+ARG DSS_CODEC_REV=e16b71c5abdf47e1f6ea2bae3f4428d69afdab31
+RUN git init -q . && \
+    git remote add origin https://github.com/gaspardpetit/dss-codec.git && \
+    git fetch -q --depth=1 origin "${DSS_CODEC_REV}" && \
+    git checkout -q FETCH_HEAD && \
     cd dss-codec && \
     cargo build --release && \
     cp target/release/dss-decode /tmp/dss-decode-native

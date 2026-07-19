@@ -23,15 +23,16 @@ New here? Start with the [README](../README.md) for the 30-second demo and the i
 | 12 | [Cracking the Grundig SP codec](12-cracking-the-grundig-sp-codec.md) | A Grundig Digta `.dss` that decoded to pure noise — in our pipeline, in FFmpeg, and in NCH Switch. The one nobody had decoded, cracked from the DLL. 🔊 |
 | 13 | [The SP re-sync block](13-the-sp-resync-block.md) | The chapter-07 re-sync rule, never ported to the SP demuxer, comes due. Same coin: re-host the parser, read the law off the silicon, port it. 🔁 |
 | 14 | [The compact block](14-the-compact-block-pause.md) | A third way DSS hides a pause — and the only one we didn't find ourselves. It arrived as a pull request. We measured, gated, shipped, and declined the half we couldn't verify. 🤝 |
+| 15 | [The relay runs backward](15-the-relay-runs-backward.md) | A PR from the same contributor: a good fix with a broken half. A shadow bench caught the regression before it merged, scrubbed repros proved it without shipping anyone's voice, and the cause was a golden master that lied — chapter 10 from the other chair. Plus a pin on the door we ship through. 🪞 |
 
 ## How to read it
 
 - **The integration story (00 → 05):** if you want to take an open codec into production, this is the recipe — pain, RE, integration, validation, the WASM→native call, and the lessons.
 - **The detective trilogy-plus (06 → 10):** if you reverse-engineer for a living, start here. Two real bugs hunted to ground (06, 07), then a rigorous investigation into a third (08, 09) that **08 and 09 get confidently wrong** — and 10, the reckoning, which is the single most useful read in the repo: how careful work fools itself, and the cheapest test that breaks the spell.
-- **The relay (11 → 14):** the format keeps handing over new locks — a second device family (Grundig/Philips), a codec nobody had decoded, and a pause encoding a contributor found before we did. This is what an open format looks like when strangers keep pulling the thread.
+- **The relay (11 → 15):** the format keeps handing over new locks — a second device family (Grundig/Philips), a codec nobody had decoded, a pause encoding a contributor found before we did, and — the other direction at last — a regression *we* caught in a contributor's pull request before it shipped. This is what an open format looks like when strangers keep pulling the thread, in both directions.
 
 A note on chapters 08 and 09: we did not delete them when their conclusion fell. They're preserved, each behind a banner, because the *method* in them is sound and the *trap* they fell into is the lesson. A reverse-engineering log is only worth something if its dead ends stay marked.
 
 ---
 
-*Fifteen chapters from "impossible for ten years" to "production in a weekend" — including the wrong turn we're proudest of having written down. 🔓*
+*Sixteen chapters from "impossible for ten years" to "production in a weekend" — including the wrong turn we're proudest of having written down. 🔓*

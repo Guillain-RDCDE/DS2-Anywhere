@@ -168,6 +168,19 @@ way. You hand someone a piece, and one day, without asking, they hand one back.
 
 ---
 
+And then — because a relay only means anything if it runs both ways — we got to hand a
+piece back for real. Patrick opened another pull request, folding two fixes from his FFmpeg
+work into the shared codec. One was clean. The other quietly removed the very rule we'd read
+off the silicon in chapter 07 — the one that tells the decoder where a recording *resumes
+after a pause*. On his files, straight runs with almost no pauses, it tested perfectly. On
+ours — thousands of dictations by people who stop, and think, and start again — it dissolved
+the audio after every pause. We caught it on a bench before it merged, sent him samples we'd
+scrubbed of every last trace of a human voice, and waited. He went and looked, and found the
+oldest trap in this whole story looking back at him: his reference files had been corrupted
+by accident, so a broken change had *passed its own test*. It's chapter 10 again, from the
+other chair. He fixed it, kept the good half, and merged — and nobody lost a thing, because
+two strangers happened to be testing the same format from its two opposite ends.
+
 ## Why this is here
 
 This repository is, on its surface, plumbing: scripts, a cron job, a couple of
