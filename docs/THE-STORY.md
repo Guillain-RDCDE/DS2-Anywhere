@@ -174,9 +174,10 @@ work into the shared codec. One was clean. The other quietly removed the very ru
 off the silicon in chapter 07 — the one that tells the decoder where a recording *resumes
 after a pause*. On his files, straight runs with almost no pauses, it tested perfectly. On
 ours — thousands of dictations by people who stop, and think, and start again — it dissolved
-the audio after every pause. We caught it on a bench before it merged, sent him samples we'd
-scrubbed of every last trace of a human voice, and waited. He went and looked, and found the
-oldest trap in this whole story looking back at him: his reference files had been corrupted
+the audio after every pause. We caught it on a bench before it merged and told him — and, so we
+could prove it without handing over a single person's dictation, we scrubbed a pair of sample
+files down to pure framing, every last trace of a human voice erased. He never needed them: he
+went and looked, and found the oldest trap in this whole story looking back at him: his reference files had been corrupted
 by accident, so a broken change had *passed its own test*. It's chapter 10 again, from the
 other chair. He fixed it, kept the good half, and merged — and nobody lost a thing, because
 two strangers happened to be testing the same format from its two opposite ends.

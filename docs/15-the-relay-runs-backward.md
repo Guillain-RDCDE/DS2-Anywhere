@@ -62,6 +62,10 @@ unrelated panic (below). Both safe to post in public, both usable as permanent r
 fixtures. We put the block-by-block framing table in the reproducer's own README, so the bug is
 legible without decoding a thing.
 
+As it turned out, we never had to send them. The written diagnosis was enough, and Patrick
+found the rest himself (next section). We kept the files anyway — a scrubbed regression fixture
+is worth having whether or not it's ever needed.
+
 ## The panic we found on the way
 
 The bench turned up something the PR had nothing to do with. Upstream master **panicked
@@ -69,7 +73,7 @@ outright** on 3 of our real SP recordings: a `usize` underflow in the SP demux, 
 going negative on the last frame when the declared frame count overshoots the built stream.
 Our own decoder passes those files fine — a different code path — so we'd never have seen it
 in production. But anyone building from master would. One line — `end.saturating_sub(spos)` —
-and the files decode full-length. We sent it along with the repros.
+and the files decode full-length. We put it in the same report.
 
 ## The very human root cause
 
