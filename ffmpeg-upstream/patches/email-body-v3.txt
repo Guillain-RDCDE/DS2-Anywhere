@@ -1,0 +1,93 @@
+Hi,
+
+This series adds support for the Olympus Digital Speech Standard Pro
+(DS2) audio format, used by Olympus DS-, DM-, and DPM-series dictation
+recorders. It is the successor to the DSS format already supported in
+FFmpeg (libavcodec/dss_sp.c and libavformat/dss.c, Oleksij Rempel,
+2014). The two formats share a similar 0x600 header layout but use
+different codebooks and frame structures; this series is complementary
+to the existing DSS support, and the demuxer only accepts the DS2 magic
+(\x03ds2), so DSS files keep routing to the existing dss_sp path.
+
+Trac ticket #6091, open since October 2017, is closed by this series.
+
+  1/2  avcodec, avformat: add Olympus DS2 decoder and demuxer
+       The CELP decoder (both modes: SP 12 kHz, QP 16 kHz) and the .ds2
+       container demuxer. Codec by Patrick Domack, implemented from a
+       specification reverse-engineered from the Olympus DLLs by Kieran
+       Hirpara.
+
+  2/2  avformat/ds2: re-anchor QP frames across segment boundaries
+       The QP demuxer re-anchors each block's frames at payload offset
+       2*byte1 - 6 so paused / voice-activated recordings decode
+       correctly; a flat read desyncs from the first pause onward. Adds
+       FATE coverage, including a paused-recording regression vector.
+
+Changes since v2 (single patch, 2026-05-26,
+<20260526151029.449720-1-guillain@poulpe.us>)
+----------------------------------------------
+
+  - Split into a 2-patch series. 1/2 is the v2 decoder + demuxer,
+    unchanged except for an ASCII cleanup (U+00D7 '×' -> 'x' in two
+    comment lines, which a reviewer had flagged in advance).
+
+  - New 2/2 fixes the QP demuxer for paused recordings. v2 read the QP
+    block stream as a flat concatenation, which is correct only on
+    gap-free audio; real dictation pauses at segment boundaries, and the
+    v2 demuxer desynced there to end-of-file. Each QP block re-anchors
+    its frames at payload offset 2*byte1 - 6 (empty blocks being the
+    zero-fresh-frames special case); at a re-sync block the leading bytes
+    are an orphaned straddle tail and the partial frame in flight is
+    stale. frame_count over-counts on these blocks (observed 19), so the
+    block end bounds framing, not the count. The rule was
+    reverse-engineered from, and confirmed byte-for-byte against, the
+    Olympus DssParser.dll captured at runtime.
+
+  - Adds FATE: fate-ds2-qp (continuous) and fate-ds2-qp-paused. The
+    latter contains a real re-sync block and guards the 2/2 fix - the v2
+    demuxer fails it while the fixed demuxer passes.
+
+FATE samples (for samples.ffmpeg.org/A-codecs/DS2/)
+---------------------------------------------------
+
+  - sample-qp.ds2  (continuous QP, 37 s, 129 KiB) - a public vendor test
+    file from dictate.com.au, produced specifically as a codec-testing
+    artefact. Real audio, no client content. If maintainers want an
+    explicit CC0 grant on file we will obtain one from the host before
+    upload.
+
+  - paused-qp.ds2  (paused QP, 21 KiB) - a purpose-built regression
+    vector. The block framing that triggers the re-sync path is kept
+    intact, but every audio-payload and metadata byte has been replaced,
+    so the file carries no speech and no identifying metadata.
+    Contributed under CC0 by the submitter; no third-party licensing
+    question.
+
+Authorship and licensing
+-------------------------
+
+The codec specification was reverse-engineered from the Olympus DLLs
+(DssDecoder.dll, dss32.dll) via Ghidra by Kieran Hirpara
+(https://github.com/hirparak/dss-codec, MIT, 2026), with byte-for-byte
+verification against the official Olympus DirectShow filter. The C
+decoder in 1/2 is by Patrick Domack, implemented from the trac #6091
+specification text; its numerical quantization tables are shared with
+Hirpara's reference implementation. Both the algorithm and the tables
+are MIT-licensed. Patrick relicensed his contribution under MIT /
+public-domain terms explicitly for upstream FFmpeg merge:
+
+  https://github.com/hirparak/dss-codec/issues/1
+
+Patrick has explicitly opted out of ffmpeg-devel interaction but remains
+available for codec-internals questions via the issue thread above. I
+handle the mailing-list traffic and am the DCO signer on both patches.
+
+The QP re-anchoring in 2/2 and the FATE preparation were done by the
+submitter; the full reverse-engineering write-up is public at
+https://github.com/Guillain-RDCDE/DS2-Anywhere (docs/06, docs/07).
+
+The series applies cleanly on master (HEAD c2312363, 2026-07-20),
+builds, and both FATE tests pass.
+
+Thanks,
+Guillain

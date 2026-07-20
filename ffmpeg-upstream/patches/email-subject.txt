@@ -1,1 +1,1 @@
-[PATCH v2] avcodec, avformat: add Olympus DS2 decoder and demuxer
+[PATCH v3 0/2] avcodec, avformat: add Olympus DS2 decoder and demuxer

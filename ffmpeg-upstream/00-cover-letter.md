@@ -1,5 +1,8 @@
 # Cover letter — `ffmpeg-devel` submission
 
+> **v3 (current):** the ready-to-send cover is [`patches/email-body-v3.txt`](patches/email-body-v3.txt)
+> (2-patch series). The v2 body below is kept for history.
+
 > Draft, not sent. Will be the body of the `[PATCH]` email accompanying
 > the patch to `ffmpeg-devel@ffmpeg.org`. Plain text, no Markdown,
 > ASCII only, lines wrapped at 75 cols (mailing-list convention).
