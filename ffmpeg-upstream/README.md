@@ -4,8 +4,8 @@
 > The **v2 patch** has been sent; two **demuxer corrections** for paused
 > recordings (empty-block + `byte1` re-anchoring) have been written up and
 > flagged to the thread (2026-06-02); the consolidated **v3 patch** that
-> folds them in is **ready** (built, applies cleanly on master, both FATE
-> tests pass) and staged here, not yet sent. This folder is the open workbench:
+> folds them in was **sent to ffmpeg-devel on 2026-07-20** (2-patch v3
+> series; built, applies cleanly on master, both FATE tests pass). This folder is the open workbench:
 > cover letter, FATE plan, changelog, FATE sample, and the follow-up notes.
 
 ## Status
@@ -23,7 +23,7 @@
 | Changelog + doc + header entries drafted | [`02-changelog-and-doc.md`](02-changelog-and-doc.md) |
 | Patch sent to `ffmpeg-devel` | **v2 sent** — supersedes v1 (2026-05-25 21:35 CEST). v2 brings Patrick Domack EOF + rounding fixes; decoder bit-perfect vs Hirpara reference (zero diff on FATE sample). v1 lore: [archive](https://lists.ffmpeg.org/lore/ffmpeg-devel/20260525193532.1845986-1-guillain@poulpe.us/T/#u). |
 | Demuxer corrections for paused recordings | **Written up + flagged to the v2 thread 2026-06-02.** Both turned out to be one rule (per-block `byte1` re-anchoring; empty-block is its zero-fresh-frames case), confirmed byte-for-byte against the live Olympus parser. Notes: [`03-v3-empty-block-fix.md`](03-v3-empty-block-fix.md), [`04-resync-block-byte1.md`](04-resync-block-byte1.md); story: [`docs/07`](../docs/07-cracking-the-resync-block.md); follow-up mail: [`patches/email-body-v3-followup.txt`](patches/email-body-v3-followup.txt). Reference implementation (Rust) is live in production with an 18-file OLD-vs-NEW regression corpus. |
-| v3 patch (folds both demux corrections) | **Ready, not yet sent.** 2-patch series: [`patches/v3-0001-*.patch`](patches/v3-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch) (Patrick's decoder+demuxer, + ASCII cleanup) and [`patches/v3-0002-*.patch`](patches/v3-0002-avformat-ds2-re-anchor-QP-frames-across-segment-b.patch) (QP re-sync re-anchoring + FATE). `git am` clean on master `c2312363`; builds; `fate-ds2-qp` + `fate-ds2-qp-paused` pass. Paused FATE sample (CC0, scrubbed of all audio+metadata) + refs in [`fate/`](fate/). Cover: [`patches/email-body-v3.txt`](patches/email-body-v3.txt). |
+| v3 patch (folds both demux corrections) | **Sent to ffmpeg-devel 2026-07-20** (SMTP 250). 2-patch series: [`patches/v3-0001-*.patch`](patches/v3-0001-avcodec-avformat-add-Olympus-DS2-decoder-and-demu.patch) (Patrick's decoder+demuxer, + ASCII cleanup) and [`patches/v3-0002-*.patch`](patches/v3-0002-avformat-ds2-re-anchor-QP-frames-across-segment-b.patch) (QP re-sync re-anchoring + FATE). `git am` clean on master `c2312363`; builds; `fate-ds2-qp` + `fate-ds2-qp-paused` pass. Paused FATE sample (CC0, scrubbed of all audio+metadata) + refs in [`fate/`](fate/). Cover: [`patches/email-body-v3.txt`](patches/email-body-v3.txt). |
 
 [reli]: https://github.com/hirparak/dss-codec/issues/1
 
