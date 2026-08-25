@@ -24,6 +24,7 @@ New here? Start with the [README](../README.md) for the 30-second demo and the i
 | 13 | [The SP re-sync block](13-the-sp-resync-block.md) | The chapter-07 re-sync rule, never ported to the SP demuxer, comes due. Same coin: re-host the parser, read the law off the silicon, port it. 🔁 |
 | 14 | [The compact block](14-the-compact-block-pause.md) | A third way DSS hides a pause — and the only one we didn't find ourselves. It arrived as a pull request. We measured, gated, shipped, and declined the half we couldn't verify. 🤝 |
 | 15 | [The relay runs backward](15-the-relay-runs-backward.md) | A PR from the same contributor: a good fix with a broken half. A shadow bench caught the regression before it merged, scrubbed repros proved it without shipping anyone's voice, and the cause was a golden master that lied — chapter 10 from the other chair. Plus a pin on the door we ship through. 🪞 |
+| 16 | [The Q15 instability](16-the-q15-instability.md) | A codec that correlates at 0.998 for 58 seconds then blows up. The cause: Q15 integer truncation vs the DLL double-precision arithmetic. The fix: a six-line AGC. The discovery: the DLL codebook is 256 doubles in log-space, not 32 integers. 🔊 |
 
 ## How to read it
 
