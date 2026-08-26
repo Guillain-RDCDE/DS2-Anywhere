@@ -128,13 +128,14 @@ fn main() {
             ) {
                 Ok(buf) => {
                     if !cli.quiet {
-                        let duration = buf.samples.len() as f64 / buf.native_rate as f64;
+                        let effective_rate = config.sample_rate.unwrap_or(buf.native_rate);
+                        let duration = buf.samples.len() as f64 / effective_rate as f64;
                         eprintln!(
                             "  {} -> {} ({:.1}s, {} Hz, {:?})",
                             input_path.display(),
                             output_path.display(),
                             duration,
-                            buf.native_rate,
+                            effective_rate,
                             buf.format,
                         );
                     }
