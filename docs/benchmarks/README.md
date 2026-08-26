@@ -20,7 +20,7 @@ Each entry contains:
 | `audio_rms`, `audio_peak` | Audio statistics on the decoded PCM (sanity checks) |
 | `mp3_bytes` | Size of the produced MP3 (64 kbps mono) |
 | `convert_ms` | Wall-clock time of the full decode + encode (WASM chain) |
-| `status` | `ok` for all 35 files |
+| `status` | `ok` for all 42 files |
 
 ## Headline metrics
 

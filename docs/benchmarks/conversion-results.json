@@ -488,5 +488,68 @@
     "mp3_bytes": 15254496,
     "convert_ms": 34472,
     "status": "ok"
+  },
+  {
+    "file": "SNCF_RESEAU_VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 596,
+    "size_bytes": 1035264,
+    "decode_ok": true,
+    "agc_triggered": true,
+    "notes": "Chapter 16: AGC stabilized at t=126s"
+  },
+  {
+    "file": "EDL_VILOGIA_BOUAJILA_VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 629,
+    "size_bytes": 1091584,
+    "decode_ok": true,
+    "agc_triggered": false,
+    "notes": "Stable without AGC"
+  },
+  {
+    "file": "EDL_VILOGIA_MUHOZA__VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 667,
+    "size_bytes": 1157632,
+    "decode_ok": true,
+    "agc_triggered": false,
+    "notes": "Stable without AGC"
+  },
+  {
+    "file": "EDL_VILOGIA_DEVERSENNE_VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 753,
+    "size_bytes": 1305088,
+    "decode_ok": true,
+    "agc_triggered": false,
+    "notes": "Stable without AGC"
+  },
+  {
+    "file": "EDL_VILOGIA_LUTUN_VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 755,
+    "size_bytes": 1308672,
+    "decode_ok": true,
+    "agc_triggered": true,
+    "notes": "Chapter 16: AGC stabilized at t=740s"
+  },
+  {
+    "file": "EDL_VILOGIA_DANELS_VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 994,
+    "size_bytes": 1723904,
+    "decode_ok": true,
+    "agc_triggered": true,
+    "notes": "Chapter 16: AGC stabilized at t=230s"
+  },
+  {
+    "file": "EDL_GORRET__VUJIAC.DSS",
+    "format": "dss_sp",
+    "duration_s": 1401,
+    "size_bytes": 2428928,
+    "decode_ok": true,
+    "agc_triggered": true,
+    "notes": "Chapter 16: AGC stabilized at t=58s"
   }
 ]
