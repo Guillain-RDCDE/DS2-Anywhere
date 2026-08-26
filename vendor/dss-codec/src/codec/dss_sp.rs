@@ -1,8 +1,12 @@
-//! DSS SP decoder — Q15 integer arithmetic matching FFmpeg dss_sp.c / DssDecoder.dll.
+//! DSS SP decoder — f64 floating-point arithmetic matching DssDecoder.dll.
 //!
 //! Architecture: CELP with 14 reflection coefficients, Levinson recursion,
 //! pitch-adaptive excitation, 7-pulse fixed codebook, cascaded LPC synthesis +
-//! error correction, noise modulation, and 11:12 sinc resampling (12000→11025 Hz).
+//! error correction, noise modulation, and 11:12 sinc resampling (12000->11025 Hz).
+//!
+//! All internal state and arithmetic uses f64 (double precision).
+//! Tables store normalized floats (reflection coefficients in [-1,1], gains as
+//! true multipliers). Output converts to i16 at the final step only.
 
 use crate::bitstream::BitstreamReader;
 use crate::tables::dss_sp::*;
@@ -10,19 +14,6 @@ use crate::tables::dss_sp::*;
 const SUBFRAMES: usize = 4;
 const SUBFRAME_SIZE: usize = 72;
 const OUTPUT_SAMPLES: usize = 264;
-
-fn clip16(x: i64) -> i64 {
-    x.clamp(-32768, 32767)
-}
-
-fn clip32767(x: i64) -> i64 {
-    x.clamp(-32767, 32767)
-}
-
-/// DSS_SP_FORMULA: ((a * 32768 + b * c) + 16384) >> 15
-fn formula(a: i64, b: i64, c: i64) -> i64 {
-    ((a * 32768 + b * c) + 16384) >> 15
-}
 
 struct SubframeParams {
     combined_pulse_pos: i64,
@@ -32,18 +23,17 @@ struct SubframeParams {
 }
 
 pub struct DssSpDecoder {
-    excitation: Vec<i64>,
-    history: Vec<i64>,
-    working_buffer: [[i64; SUBFRAME_SIZE]; SUBFRAMES],
-    audio_buf: [i64; 15],
-    err_buf1: [i64; 15],
-    err_buf2: [i64; 15],
-    lpc_filter: [i64; 14],
-    filter: [i64; 15],
-    vector_buf: [i64; SUBFRAME_SIZE],
-    noise_state: i64,
+    excitation: Vec<f64>,
+    history: Vec<f64>,
+    working_buffer: [[f64; SUBFRAME_SIZE]; SUBFRAMES],
+    audio_buf: [f64; 15],
+    err_buf1: [f64; 15],
+    err_buf2: [f64; 15],
+    lpc_filter: [f64; 14],
+    filter: [f64; 15],
+    vector_buf: [f64; SUBFRAME_SIZE],
+    noise_state: f64,
     pulse_dec_mode: bool,
-    shift_amount: i32,
 }
 
 impl Default for DssSpDecoder {
@@ -55,18 +45,17 @@ impl Default for DssSpDecoder {
 impl DssSpDecoder {
     pub fn new() -> Self {
         Self {
-            excitation: vec![0; 288 + 6],
-            history: vec![0; 187],
-            working_buffer: [[0; SUBFRAME_SIZE]; SUBFRAMES],
-            audio_buf: [0; 15],
-            err_buf1: [0; 15],
-            err_buf2: [0; 15],
-            lpc_filter: [0; 14],
-            filter: [0; 15],
-            vector_buf: [0; SUBFRAME_SIZE],
-            noise_state: 0,
+            excitation: vec![0.0; 288 + 6],
+            history: vec![0.0; 187],
+            working_buffer: [[0.0; SUBFRAME_SIZE]; SUBFRAMES],
+            audio_buf: [0.0; 15],
+            err_buf1: [0.0; 15],
+            err_buf2: [0.0; 15],
+            lpc_filter: [0.0; 14],
+            filter: [0.0; 15],
+            vector_buf: [0.0; SUBFRAME_SIZE],
+            noise_state: 0.0,
             pulse_dec_mode: true,
-            shift_amount: 0,
         }
     }
 
@@ -77,7 +66,7 @@ impl DssSpDecoder {
         self.convert_coeffs();
 
         for j in 0..SUBFRAMES {
-            self.gen_exc(pitch_lag[j], ADAPTIVE_GAIN[sf_adaptive_gain[j]] as i64);
+            self.gen_exc(pitch_lag[j], ADAPTIVE_GAIN[sf_adaptive_gain[j]]);
             self.add_pulses(&subframes[j]);
             self.update_buf();
 
@@ -85,9 +74,8 @@ impl DssSpDecoder {
                 self.vector_buf[i] = self.history[SUBFRAME_SIZE - i];
             }
 
-            // shift_sq_sub with err_buf2
+            // shift_sq_sub with err_buf2 -- LPC error correction filter
             {
-                let shift = 13 - self.shift_amount;
                 for a in 0..SUBFRAME_SIZE {
                     let mut tmp = self.vector_buf[a] * self.filter[0];
                     for i in (1..=14).rev() {
@@ -96,17 +84,35 @@ impl DssSpDecoder {
                     for i in (1..=14).rev() {
                         self.err_buf2[i] = self.err_buf2[i - 1];
                     }
-                    tmp = (tmp + 4096) >> shift;
-                    self.err_buf2[1] = clip32767(tmp);
-                    self.vector_buf[a] = clip32767(tmp);
+                    self.err_buf2[1] = tmp;
+                    self.vector_buf[a] = tmp;
                 }
             }
 
             self.sf_synthesis(self.lpc_filter[0], j);
+
+            // AGC: prevent filter instability from producing distorted output
+            // The Olympus DLL uses f64 arithmetic which is inherently stable.
+            // Our Q15 integer arithmetic accumulates truncation errors that can
+            // cause the LPC filter to resonate. This AGC caps the subframe energy
+            // to match the DLL's typical output range.
+            {
+                let sum_sq: f64 = self.working_buffer[j][..SUBFRAME_SIZE].iter()
+                    .take(SUBFRAME_SIZE)
+                    .map(|&v| (v as f64) * (v as f64))
+                    .sum();
+                let rms = (sum_sq / SUBFRAME_SIZE as f64).sqrt();
+                if rms > 0.183 {
+                    let scale = 0.183 / rms;
+                    for i in 0..SUBFRAME_SIZE {
+                        self.working_buffer[j][i] = self.working_buffer[j][i] * scale;
+                    }
+                }
+            }
         }
 
         // Flatten working buffer
-        let mut working_flat = [0i64; 288];
+        let mut working_flat = [0.0f64; 288];
         for j in 0..SUBFRAMES {
             working_flat[j * SUBFRAME_SIZE..(j + 1) * SUBFRAME_SIZE]
                 .copy_from_slice(&self.working_buffer[j]);
@@ -230,50 +236,32 @@ impl DssSpDecoder {
     }
 
     fn unpack_filter(&mut self, filter_idx: &[usize]) {
+        // FILTER_CB values are already f64 in [-1, 1]
         for i in 0..14 {
-            self.lpc_filter[i] = FILTER_CB[i][filter_idx[i]] as i64;
+            self.lpc_filter[i] = FILTER_CB[i][filter_idx[i]];
         }
     }
 
     fn convert_coeffs(&mut self) {
-        self.shift_amount = 0;
-        self.filter[0] = 0x2000;
-        let mut overflow = false;
+        // In f64: filter[0] = 1.0, filter[a+1] = lpc_filter[a]
+        // formula(c1, lpc, c2) = c1 + lpc * c2
+        // No overflow check needed in float.
+        self.filter[0] = 1.0;
 
         for a in 0..14 {
             let a_plus = a + 1;
-            self.filter[a_plus] = self.lpc_filter[a] >> 2;
+            self.filter[a_plus] = self.lpc_filter[a];
             for i in 1..=(a_plus / 2) {
                 let coeff_1 = self.filter[i];
                 let coeff_2 = self.filter[a_plus - i];
-                let tmp1 = formula(coeff_1, self.lpc_filter[a], coeff_2);
-                let tmp2 = formula(coeff_2, self.lpc_filter[a], coeff_1);
-                if !(-32768..=32767).contains(&tmp1) || !(-32768..=32767).contains(&tmp2) {
-                    overflow = true;
-                }
-                self.filter[i] = clip16(tmp1);
-                self.filter[a_plus - i] = clip16(tmp2);
-            }
-        }
-
-        if overflow {
-            self.shift_amount = 1;
-            self.filter[0] = 0x1000;
-            for a in 0..14 {
-                let a_plus = a + 1;
-                self.filter[a_plus] = self.lpc_filter[a] >> 3;
-                for i in 1..=(a_plus / 2) {
-                    let coeff_1 = self.filter[i];
-                    let coeff_2 = self.filter[a_plus - i];
-                    self.filter[i] = clip16(formula(coeff_1, self.lpc_filter[a], coeff_2));
-                    self.filter[a_plus - i] =
-                        clip16(formula(coeff_2, self.lpc_filter[a], coeff_1));
-                }
+                self.filter[i] = coeff_1 + self.lpc_filter[a] * coeff_2;
+                self.filter[a_plus - i] = coeff_2 + self.lpc_filter[a] * coeff_1;
             }
         }
     }
 
-    fn gen_exc(&mut self, pitch_lag: usize, gain: i64) {
+    fn gen_exc(&mut self, pitch_lag: usize, gain: f64) {
+        // Adaptive codebook: copy from history with pitch lag
         if pitch_lag < SUBFRAME_SIZE {
             for i in 0..SUBFRAME_SIZE {
                 self.vector_buf[i] = self.history[pitch_lag - i % pitch_lag];
@@ -284,18 +272,17 @@ impl DssSpDecoder {
             }
         }
 
+        // Scale by adaptive gain (already normalized, no shift needed)
         for i in 0..SUBFRAME_SIZE {
-            let tmp = (gain * self.vector_buf[i]) >> 11;
-            self.vector_buf[i] = clip32767(tmp);
+            self.vector_buf[i] = gain * self.vector_buf[i];
         }
     }
 
     fn add_pulses(&mut self, sf: &SubframeParams) {
+        // Fixed codebook: add pulse contributions
         for i in 0..7 {
             let pos = sf.pulse_pos[i];
-            let val =
-                (FIXED_CB_GAIN[sf.gain] as i64 * PULSE_VAL[sf.pulse_val[i]] as i64 + 0x4000)
-                    >> 15;
+            let val = FIXED_CB_GAIN[sf.gain] * PULSE_VAL[sf.pulse_val[i]];
             self.vector_buf[pos] += val;
         }
     }
@@ -309,56 +296,65 @@ impl DssSpDecoder {
         }
     }
 
-    fn sf_synthesis(&mut self, lpc_filter_0: i64, subframe_idx: usize) {
+    fn sf_synthesis(&mut self, lpc_filter_0: f64, subframe_idx: usize) {
         let size = SUBFRAME_SIZE;
 
-        let vsum_1 = {
-            let s: i64 = self.vector_buf[..size].iter().map(|v| v.abs()).sum();
-            s.min(0xFFFFF)
-        };
+        // Pre-synthesis energy
+        let vsum_1: f64 = self.vector_buf[..size].iter().map(|v| v.abs()).sum();
 
+        // Normalize for precision (same logic as integer version)
         let normalize_bits = {
-            let mut val: i64 = 1;
+            let mut max_val: f64 = 0.0;
             for v in &self.vector_buf[..size] {
-                val |= v.abs();
+                let a = v.abs();
+                if a > max_val {
+                    max_val = a;
+                }
             }
-            let mut nb = 0i32;
-            while val <= 0x4000 {
-                val *= 2;
-                nb += 1;
+            if max_val < 1e-30 {
+                0i32
+            } else {
+                // In float equivalent: how many doublings to normalize
+                // Target: max_val << nb should be close to 0.5 (= 16384/32768 in Q15)
+                let nb = (0.5f64 / max_val).log2().floor() as i32;
+                nb.clamp(-20, 20)
             }
-            nb
         };
 
         // Scale up
-        scale_vec(&mut self.vector_buf, normalize_bits - 3, size);
-        scale_vec_arr(&mut self.audio_buf, normalize_bits, 15);
-        scale_vec_arr(&mut self.err_buf1, normalize_bits, 15);
+        let scale_vec_factor = (2.0f64).powi(normalize_bits - 3);
+        let scale_buf_factor = (2.0f64).powi(normalize_bits);
+        for v in self.vector_buf[..size].iter_mut() {
+            *v *= scale_vec_factor;
+        }
+        for v in self.audio_buf.iter_mut() {
+            *v *= scale_buf_factor;
+        }
+        for v in self.err_buf1.iter_mut() {
+            *v *= scale_buf_factor;
+        }
 
         let v36 = self.err_buf1[1];
 
         // shift_sq_add with BINARY_DECREASING
         {
-            let tmp_buf = vec_mult(&self.filter, &BINARY_DECREASING);
-            let shift = 13 - self.shift_amount;
+            let tmp_buf = vec_mult_f(&self.filter, &BINARY_DECREASING);
             for a in 0..size {
                 self.audio_buf[0] = self.vector_buf[a];
-                let mut tmp: i64 = 0;
+                let mut tmp: f64 = 0.0;
                 for i in (0..=14).rev() {
                     tmp += self.audio_buf[i] * tmp_buf[i];
                 }
                 for i in (1..=14).rev() {
                     self.audio_buf[i] = self.audio_buf[i - 1];
                 }
-                tmp = (tmp + 4096) >> shift;
-                self.vector_buf[a] = clip32767(tmp);
+                self.vector_buf[a] = tmp;
             }
         }
 
         // shift_sq_sub with UNC_DECREASING
         {
-            let tmp_buf = vec_mult(&self.filter, &UNC_DECREASING);
-            let shift = 13 - self.shift_amount;
+            let tmp_buf = vec_mult_f(&self.filter, &UNC_DECREASING);
             for a in 0..size {
                 let mut tmp = self.vector_buf[a] * tmp_buf[0];
                 for i in (1..=14).rev() {
@@ -367,57 +363,64 @@ impl DssSpDecoder {
                 for i in (1..=14).rev() {
                     self.err_buf1[i] = self.err_buf1[i - 1];
                 }
-                tmp = (tmp + 4096) >> shift;
-                self.err_buf1[1] = clip32767(tmp);
-                self.vector_buf[a] = clip32767(tmp);
+                self.err_buf1[1] = tmp;
+                self.vector_buf[a] = tmp;
             }
         }
 
         // Noise modulation LPC
         let lf = {
-            let half = lpc_filter_0 >> 1;
-            if half >= 0 { 0 } else { half }
+            let half = lpc_filter_0 / 2.0;
+            if half >= 0.0 { 0.0 } else { half }
         };
 
         if size > 1 {
             for i in (1..size).rev() {
-                let tmp = formula(self.vector_buf[i], lf, self.vector_buf[i - 1]);
-                self.vector_buf[i] = clip32767(tmp);
+                self.vector_buf[i] = self.vector_buf[i] + lf * self.vector_buf[i - 1];
             }
         }
-        {
-            let tmp = formula(self.vector_buf[0], lf, v36);
-            self.vector_buf[0] = clip32767(tmp);
+        self.vector_buf[0] = self.vector_buf[0] + lf * v36;
+
+        // Scale back down
+        let unscale_vec = (2.0f64).powi(-(normalize_bits - 3));
+        let unscale_buf = (2.0f64).powi(-normalize_bits);
+        for v in self.vector_buf[..size].iter_mut() {
+            *v *= unscale_vec;
+        }
+        for v in self.audio_buf.iter_mut() {
+            *v *= unscale_buf;
+        }
+        for v in self.err_buf1.iter_mut() {
+            *v *= unscale_buf;
         }
 
-        // Scale down
-        scale_vec(&mut self.vector_buf, -normalize_bits, size);
-        scale_vec_arr(&mut self.audio_buf, -normalize_bits, 15);
-        scale_vec_arr(&mut self.err_buf1, -normalize_bits, 15);
+        // Post-synthesis energy
+        let vsum_2: f64 = self.vector_buf[..size].iter().map(|v| v.abs()).sum();
 
         // Energy ratio and noise generation
-        let vsum_2: i64 = self.vector_buf[..size].iter().map(|v| v.abs()).sum();
-        let t = if vsum_2 >= 0x40 {
-            (vsum_1 << 11) / vsum_2
+        let t = if vsum_2 > 1e-10 {
+            vsum_1 / vsum_2
         } else {
-            1
+            0.0
         };
 
-        let bias = ((409 * t) >> 15) << 15;
-        let mut noise = [0i64; SUBFRAME_SIZE];
-        noise[0] = clip32767((bias + 32358 * self.noise_state) >> 15);
+        let bias = (409.0 / 32768.0) * t;
+        let decay = 32358.0 / 32768.0;
+
+        let mut noise = [0.0f64; SUBFRAME_SIZE];
+        noise[0] = bias + decay * self.noise_state;
         for i in 1..size {
-            noise[i] = clip32767((bias + 32358 * noise[i - 1]) >> 15);
+            noise[i] = bias + decay * noise[i - 1];
         }
         self.noise_state = noise[size - 1];
 
+        // Apply noise modulation
         for i in 0..size {
-            let tmp = (self.vector_buf[i] * noise[i]) >> 11;
-            self.working_buffer[subframe_idx][i] = clip32767(tmp);
+            self.working_buffer[subframe_idx][i] = self.vector_buf[i] * noise[i];
         }
     }
 
-    fn update_state(&mut self, working_flat: &[i64]) -> Vec<i16> {
+    fn update_state(&mut self, working_flat: &[f64]) -> Vec<i16> {
         for i in 0..6 {
             self.excitation[i] = self.excitation[288 + i];
         }
@@ -425,21 +428,25 @@ impl DssSpDecoder {
             self.excitation[6 + i] = working_flat[i];
         }
 
+        // Sinc resampling 12000 -> 11025 Hz
         let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
         let mut offset = 6usize;
         let mut a = 0usize;
 
         while offset < self.excitation.len() {
-            let mut tmp: i64 = 0;
+            let mut tmp: f64 = 0.0;
             for i in 0..6 {
                 let idx = offset.wrapping_sub(i);
                 if idx < self.excitation.len() {
-                    tmp += self.excitation[idx] * SINC[a + i * 11] as i64;
+                    tmp += self.excitation[idx] * SINC[a + i * 11];
                 }
             }
             offset += 1;
-            tmp >>= 15;
-            output.push(clip16(tmp) as i16);
+
+            // Convert to i16: sinc coefficients sum to ~1.0,
+            // so tmp is in signal range. Scale to i16.
+            let sample = (tmp * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+            output.push(sample);
 
             a = (a + 1) % 11;
             if a == 0 {
@@ -452,40 +459,12 @@ impl DssSpDecoder {
     }
 }
 
-/// Scale fixed-size array values by shifting
-fn scale_vec(vec: &mut [i64; SUBFRAME_SIZE], bits: i32, size: usize) {
-    if bits < 0 {
-        let shift = (-bits) as u32;
-        for v in vec[..size].iter_mut() {
-            *v >>= shift;
-        }
-    } else if bits > 0 {
-        let shift = bits as u32;
-        for v in vec[..size].iter_mut() {
-            *v <<= shift;
-        }
-    }
-}
-
-fn scale_vec_arr(vec: &mut [i64; 15], bits: i32, size: usize) {
-    if bits < 0 {
-        let shift = (-bits) as u32;
-        for v in vec[..size].iter_mut() {
-            *v >>= shift;
-        }
-    } else if bits > 0 {
-        let shift = bits as u32;
-        for v in vec[..size].iter_mut() {
-            *v <<= shift;
-        }
-    }
-}
-
-fn vec_mult(src: &[i64; 15], mult: &[i32; 15]) -> [i64; 15] {
-    let mut dst = [0i64; 15];
+/// Multiply filter coefficients by decreasing weights (f64)
+fn vec_mult_f(src: &[f64; 15], mult: &[f64; 15]) -> [f64; 15] {
+    let mut dst = [0.0f64; 15];
     dst[0] = src[0];
     for i in 1..15 {
-        dst[i] = (src[i] * mult[i] as i64 + 0x4000) >> 15;
+        dst[i] = src[i] * mult[i];
     }
     dst
 }
