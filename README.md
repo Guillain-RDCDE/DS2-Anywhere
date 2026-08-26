@@ -154,12 +154,12 @@ The work didn't stop at our own servers — it's being handed back to the tools 
 - **A public specification.** [The first one ever written](docs/SPEC-grundig-dss-sp.md)
   for the Grundig DSS-SP codec, bit-exact — so nobody has to reverse-engineer it again.
 - **Digital preservation.** A [PRONOM submission](docs/preservation/PRONOM-submission.md)
+  so archives and forensic tools can even *recognise* these files in the first place.
 - **DSS SP long-file stability.** The original Q15 integer codec could become unstable
   after ~58 seconds on certain DSS SP files (LPC filter resonance from accumulated
   truncation errors). The codec is now rewritten in f64 with an AGC limiter, making it
   stable on files of any duration. The Olympus DLL was confirmed to use double-precision
   arithmetic internally — we are the first to document this. [Chapter 16 →](docs/16-the-q15-instability.md)
-  so archives and forensic tools can even *recognise* these files in the first place.
 
 That's the throughline of the project: not just open the lock for ourselves, but leave
 the door open for everyone.
@@ -172,7 +172,7 @@ on the same source file**, not a count of successful decodes:
 - **A/B vs Switch.exe** (same `.ds2`, both chains, both MP3s through the same Whisper
   API): transcripts **functionally identical** — 16.2 % vs 17.2 % low-confidence words,
   inside Whisper's own run-to-run variance. The chains are interchangeable downstream.
-- **42 / 42 real production dictations decoded (8 h+ of audio), zero failures.
+- **42 / 42** real production dictations decoded (8 h+ of audio), zero failures.
 - **~3 200** cron passes since go-live, zero errors. The Windows VM stays on standby,
   untouched.
 

@@ -4,7 +4,7 @@ _Or: why a codec that is 99.9% right can still blow up your speakers after one m
 
 ## The symptom
 
-A batch of seven DSS files from the same Olympus DS-7000 recorder. Five decoded fine. Two came out as ear-splitting noise -- our transcription workers parked the command three times in three days, each time a different person wrote "audios illisibles."
+A batch of seven DSS files from the same Olympus DS-7000 recorder. Three decoded fine. Four came out distorted -- our transcription workers parked the command three times in three days, each time a different person wrote "audios illisibles."
 
 ## The investigation
 

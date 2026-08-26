@@ -93,13 +93,12 @@ impl DssSpDecoder {
 
             // AGC: prevent filter instability from producing distorted output
             // The Olympus DLL uses f64 arithmetic which is inherently stable.
-            // Our Q15 integer arithmetic accumulates truncation errors that can
-            // cause the LPC filter to resonate. This AGC caps the subframe energy
+            // Even in f64, accumulated filter error on long high-energy files that can
+            // can occasionally exceed the DLL output range. This AGC caps the subframe energy
             // to match the DLL's typical output range.
             {
                 let sum_sq: f64 = self.working_buffer[j][..SUBFRAME_SIZE].iter()
-                    .take(SUBFRAME_SIZE)
-                    .map(|&v| (v as f64) * (v as f64))
+                    .map(|&v| v * v)
                     .sum();
                 let rms = (sum_sq / SUBFRAME_SIZE as f64).sqrt();
                 if rms > 0.183 {

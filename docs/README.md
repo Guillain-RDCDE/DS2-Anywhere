@@ -1,6 +1,6 @@
 # The DS2-Anywhere docs
 
-A long-form, didactic walkthrough of how a format that was locked for ten years got decoded on Linux, put into production, and debugged in public — mistakes and all. You can read these in order as one story, or jump to the chapter you need.
+A long-form, didactic walkthrough of how a format that was locked for thirty years got decoded on Linux, put into production, and debugged in public — mistakes and all. You can read these in order as one story, or jump to the chapter you need.
 
 New here? Start with the [README](../README.md) for the 30-second demo and the install. Then come back for the story.
 
@@ -36,4 +36,4 @@ A note on chapters 08 and 09: we did not delete them when their conclusion fell.
 
 ---
 
-*Sixteen chapters from "impossible for ten years" to "production in a weekend" — including the wrong turn we're proudest of having written down. 🔓*
+*Sixteen chapters from "impossible for thirty years" to "production in a weekend" — including the wrong turn we're proudest of having written down. 🔓*
