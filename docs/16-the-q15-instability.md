@@ -26,9 +26,13 @@ We rewrote the entire codec in f64 floating-point. Same instability at the same 
 
 We built a DirectShow harness (render_to_wav.exe) that loads the real DssDecoder.dll from the Olympus ODMS installation. The DLL produces 1,404 seconds of perfectly stable audio. RMS stays between 2,300 and 4,400. Zero clips.
 
-### 5. The DLL uses floating-point arithmetic
+### 5. The DLL uses floating-point arithmetic -- but that is not the difference that matters
 
-The DLL stores all its codec tables as IEEE 754 doubles and performs all synthesis in double precision. Our codec uses Q15 fixed-point integer arithmetic: every multiplication is followed by a >> 15 that drops the low bits. Over 14 filter stages x 72 samples x 4 subframes x 2,400 frames, this noise builds up and makes the LPC synthesis resonate.
+The DLL stores all its codec tables as IEEE 754 doubles and performs all synthesis in double precision, where our codec uses Q15 fixed-point: every multiplication is followed by a `>> 15` that drops the low bits. That was our hypothesis, and it is where the title of this chapter comes from.
+
+Steps 2 and 3 killed it. With the DLL's own tables, the instability is unchanged. With the whole synthesis path rewritten in f64 -- no truncation left to accumulate -- the instability is unchanged, at the same frame. Precision is not what separates us from the DLL.
+
+What separates us is the *structure* of the filter -- direct-form against lattice -- which is where this chapter ends up.
 
 ### 6. NCH Switch uses a completely different codec
 
