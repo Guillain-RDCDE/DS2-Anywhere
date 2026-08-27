@@ -155,11 +155,13 @@ The work didn't stop at our own servers — it's being handed back to the tools 
   for the Grundig DSS-SP codec, bit-exact — so nobody has to reverse-engineer it again.
 - **Digital preservation.** A [PRONOM submission](docs/preservation/PRONOM-submission.md)
   so archives and forensic tools can even *recognise* these files in the first place.
-- **DSS SP long-file stability.** The original Q15 integer codec could become unstable
-  after ~58 seconds on certain DSS SP files (LPC filter resonance from accumulated
-  truncation errors). The codec is now rewritten in f64 with an AGC limiter, making it
-  stable on files of any duration. The Olympus DLL was confirmed to use double-precision
-  arithmetic internally — we are the first to document this. [Chapter 16 →](docs/16-the-q15-instability.md)
+- **DSS SP long-file stability.** The original FFmpeg-derived synthesis (FIR + IIR
+  with bandwidth expansion + noise modulation) was structurally wrong: the Olympus DLL
+  uses a pure **IIR lattice filter** with raw reflection coefficients, no FIR, no noise
+  modulation, and a de-emphasis post-filter. We reverse-engineered the DLL's full
+  synthesis pipeline (4 functions, 2,500 bytes of x86-32) and rewrote the codec to
+  match. 13/13 DSS SP files stable, 0.93 correlation with the DLL, code 174 lines
+  shorter. [Chapter 16 →](docs/16-the-q15-instability.md)
 
 That's the throughline of the project: not just open the lock for ourselves, but leave
 the door open for everyone.

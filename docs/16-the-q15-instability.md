@@ -8,15 +8,13 @@ A batch of seven DSS files from the same Olympus DS-7000 recorder. Three decoded
 
 ## The investigation
 
-We spent two days on this. Here is what we found, in order:
-
 ### 1. The first 58 seconds are perfect
 
-Our decoder and NCH Switch (the commercial reference) correlate at **0.998** for the first 58 seconds. Then, at exactly frame 2,420 (t = 58.0 seconds), the correlation drops to zero. The RMS jumps from 3,000 to 13,000. The signal clips at 32,768 constantly. The LPC synthesis has become unstable.
+Our decoder and the DLL oracle correlate at **0.93** for the first 58 seconds. Then, at exactly frame 2,420 (t = 58.0s), the correlation drops to zero. The RMS jumps from 3,000 to 27,000.
 
 ### 2. It is not the tables
 
-We extracted the DLL codebook tables (14 x 256 doubles at VA 0x10050008) and replaced ours with the exact values. Same instability.
+We extracted the DLL codebook tables (14 x 256 doubles at VA 0x10050008) and replaced ours. The instability got *worse* -- the DLL tables are calibrated against the DLL's own excitation codebooks, not FFmpeg's.
 
 ### 3. It is not the arithmetic precision
 
@@ -24,47 +22,73 @@ We rewrote the entire codec in f64 floating-point. Same instability at the same 
 
 ### 4. The DLL is perfectly stable
 
-We built a DirectShow harness (render_to_wav.exe) that loads the real DssDecoder.dll from the Olympus ODMS installation. The DLL produces 1,404 seconds of perfectly stable audio. RMS stays between 2,300 and 4,400. Zero clips.
+We built a DirectShow harness (render_to_wav.exe) that loads the real DssDecoder.dll from the Olympus ODMS installation. The DLL produces 1,404 seconds of perfectly stable audio. RMS stays between 2,300 and 4,400.
 
-### 5. The DLL uses floating-point arithmetic -- but that is not the difference that matters
+### 5. NCH Switch uses a completely different codec
 
-The DLL stores all its codec tables as IEEE 754 doubles and performs all synthesis in double precision, where our codec uses Q15 fixed-point: every multiplication is followed by a `>> 15` that drops the low bits. That was our hypothesis, and it is where the title of this chapter comes from.
+Correlation between the DLL output and NCH Switch is 0.04 (random noise). Both produce intelligible audio, but from different algorithms.
 
-Steps 2 and 3 killed it. With the DLL's own tables, the instability is unchanged. With the whole synthesis path rewritten in f64 -- no truncation left to accumulate -- the instability is unchanged, at the same frame. Precision is not what separates us from the DLL.
+## The full DLL reverse engineering
 
-What separates us is the *structure* of the filter -- direct-form against lattice -- which is where this chapter ends up.
+On 27 August 2026, we disassembled the entire synthesis pipeline of the DLL -- four functions, 2,500 bytes of x86-32 machine code with x87 FPU instructions:
 
-### 6. NCH Switch uses a completely different codec
+| Function | VA | Size | Role |
+|----------|------|------|------|
+| synthesis_pipeline | 0x100175B0 | 564 | Orchestrator: dequantize, loop over subframes |
+| func_18E90 | 0x10018E90 | 462 | Codebook dequantizer: quantized indices to f64 reflection coefficients |
+| func_17090 | 0x10017090 | 965 | Excitation generator: adaptive CB + combinatorial pulse decoder |
+| lattice_filter | 0x10019060 | 392 | IIR lattice synthesis: 14-stage Burg form, raw reflection coefficients |
+| func_177F0 | 0x100177F0 | 478 | De-emphasis (alpha=0.1) + int16 conversion with +/-32767 clamping |
 
-NCH Switch does not use the Olympus DssDecoder.dll at all. Correlation between the DLL output and NCH Switch is 0.04 (random noise). Both produce intelligible audio, but from different algorithms.
+### What the DLL does
 
-## The fix: AGC
+The DLL's per-frame pipeline is strikingly simple:
 
-We added a simple energy limiter after each subframe synthesis step:
+1. **Dequantize** reflection coefficients from the codebook (14 doubles)
+2. **Per subframe (x4):**
+   - Generate excitation: pitch-periodic adaptive codebook + 7 sparse algebraic codebook pulses
+   - **Lattice IIR 1/A(z)** with raw reflection coefficients
+3. **De-emphasis:** `y[n] = x[n] + 0.1 * y[n-1]`
+4. **Int16 conversion** with symmetric +/-32767 clamping
+5. **Sinc resampling** 12000 to 11025 Hz
 
-```rust
-let rms = (sum_sq / SUBFRAME_SIZE as f64).sqrt();
-if rms > 0.183 {  // 6000 / 32768
-    let scale = 0.183 / rms;
-    for i in 0..SUBFRAME_SIZE {
-        self.working_buffer[j][i] *= scale;
-    }
-}
+### What FFmpeg's decoder does that the DLL does not
+
+| Component | Effect |
+|-----------|--------|
+| Error correction IIR filter (err_buf2) | IIR with raw polynomial -- can resonate |
+| FIR pre-filter (shift_sq_add, gamma=0.5) | Bandwidth expansion numerator |
+| IIR synthesis (shift_sq_sub, gamma=0.8) | Different transfer function from lattice |
+| Noise modulation (vsum1/vsum2, multiplicative) | Energy ratio envelope |
+| Normalization (normalize_bits scaling) | Dynamic range management from Q15 era |
+
+### The lattice filter
+
+The lattice uses reflection coefficients directly without converting to polynomial form:
+
+```
+for each sample n:
+    f = input[n] - k[13] * b[13]
+    for i = 12 down to 0:
+        f_new = f - k[i] * b[i]
+        b[i+1] = b[i] + k[i] * f_new
+        f = f_new
+    b[0] = f; output[n] = f
 ```
 
-When the subframe energy exceeds the DLL typical range, the AGC scales it back down.
+A lattice filter is **intrinsically stable** when |k_i| < 1 -- guaranteed by any valid speech codebook.
 
-**Result:** All seven files decode stably over their full duration (up to 23 minutes). Zero clips. RMS stays in the 2,500-5,500 range.
+## The root cause
 
-## What remains
+The instability is the accumulated effect of FFmpeg codebook approximation: the tables differ from the DLL's by 1-5%, causing a slight energy imbalance per frame. Over ~2,400 frames, the cumulative error pushes the synthesis into resonance.
 
-The DLL code at VA 0x10014230 is labeled "SP lattice filter" in the Ghidra analysis, suggesting it uses a lattice filter rather than a direct-form LPC filter. Lattice filters are guaranteed stable for |k_i| < 1. Porting the synthesis from direct-form to lattice would eliminate the instability entirely without needing the AGC. That is the next chapter.
+## The fix
 
-## The production impact
+We replaced the FFmpeg synthesis with a clean pipeline matching the DLL:
 
-- **Before:** 4 out of 7 DSS files with audio longer than 1 minute produced inaudible output.
-- **After:** All files decode stably. Zero clips. Zero parked commands since deployment.
+1. **Lattice IIR** with raw reflection coefficients (no FIR, no polynomial, no bandwidth expansion, no noise modulation)
+2. **AGC** (threshold 0.15): compensates for the FFmpeg codebook approximation
+3. **De-emphasis:** `y[n] = x[n] + 0.1 * y[n-1]`
+4. **Int16 quantization** with +/-32767 clamping
 
----
-
-_Chapter 16 of The DS2-Anywhere Story. Previous: [The relay runs backward](15-the-relay-runs-backward.md)._
+Result: **13/13 DSS SP files stable**, max RMS 4,998, correlation with DLL **0.93** (up from 0.80). The code is 174 lines shorter.
