@@ -1,15 +1,66 @@
---- /tmp/dss_sp_ffmpeg.c	2026-08-27 15:28:44.490576782 +0200
-+++ /tmp/dss_sp_lattice.c	2026-08-27 15:36:41.606873009 +0200
-@@ -28,6 +28,8 @@
- #include "decode.h"
- #include "get_bits.h"
+From 064eb829c3ab6a59484b62e1d3594eb6525d7e48 Mon Sep 17 00:00:00 2001
+From: Guillain d'Erceville <guillain@poulpe.us>
+Date: Thu, 27 Aug 2026 16:13:51 +0200
+Subject: [PATCH] avcodec/dss_sp: replace the synthesis with the DLL lattice
+ pipeline
+
+The synthesis of the Olympus DssDecoder.dll was disassembled in full
+(four functions, 2500 bytes of x86-32 with x87 FPU). Its per-subframe
+pipeline is
+
+    excitation -> 14-stage lattice IIR 1/A(z) -> de-emphasis -> clamp
+
+driven by the raw reflection coefficients of the codebook, with no
+polynomial conversion. dss_sp_sf_synthesis() implements five stages the
+DLL does not have at all: an error-correction IIR over the raw
+polynomial coefficients, a FIR pre-filter, a direct-form IIR synthesis
+with bandwidth expansion, noise modulation, and dynamic normalization.
+
+Those five stages approximate the DLL closely enough on short files,
+but the direct form can drift into resonance. The codebook tables in
+dss_sp.c differ from the DLL ones by 1-5%, and the resulting per-frame
+energy imbalance compounds through the pitch-adaptive feedback loop;
+past roughly 2400 frames (~58 s) the output saturates and stays
+saturated. A lattice with |k| < 1 is unconditionally stable, which is
+why the DLL never exhibits this.
+
+Replace the synthesis with the lattice pipeline, add the de-emphasis
+post-filter (y[n] = x[n] + 0.1 * y[n-1]) and an AGC that compensates
+for the codebook approximation error. Eight functions and two tables
+become unused and are removed.
+
+Tested on 15 DSS SP recordings from Olympus and Philips hardware, 5 to
+27 minutes long. With the current code, 10 of them saturate (0.5-0.8%
+of samples clipped, and the proportion grows with duration); with the
+lattice, none do. DSS LP output is bit-identical, only the fate-dss-sp
+reference changes.
+---
+ libavcodec/dss_sp.c   | 263 ++++++++++--------------------------------
+ tests/ref/fate/dss-sp |  60 +++++-----
+ 2 files changed, 93 insertions(+), 230 deletions(-)
+
+diff --git a/libavcodec/dss_sp.c b/libavcodec/dss_sp.c
+index 9337371..92f036d 100644
+--- a/libavcodec/dss_sp.c
++++ b/libavcodec/dss_sp.c
+@@ -19,6 +19,8 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+  */
  
 +#include <math.h>
 +
- #define SUBFRAMES 4
- #define PULSE_MAX 8
+ #include "libavutil/channel_layout.h"
+ #include "libavutil/common.h"
+ #include "libavutil/mem_internal.h"
+@@ -33,7 +35,6 @@
  
-@@ -55,13 +57,10 @@
+ #define DSS_SP_FRAME_SIZE        42
+ #define DSS_SP_SAMPLE_COUNT     (66 * SUBFRAMES)
+-#define DSS_SP_FORMULA(a, b, c) ((int)((((a) * (1 << 15)) + (b) * (unsigned)(c)) + 0x4000) >> 15)
+ 
+ typedef struct DssSpSubframe {
+     int16_t gain;
+@@ -55,13 +56,10 @@ typedef struct DssSpContext {
      int32_t history[187];
      DssSpFrame fparam;
      int32_t working_buffer[SUBFRAMES][72];
@@ -25,7 +76,7 @@
  
      int pulse_dec_mode;
  
-@@ -258,16 +257,6 @@
+@@ -258,16 +256,6 @@ static const int16_t  dss_sp_pulse_val[8] = {
      -31182, -22273, -13364, -4455, 4455, 13364, 22273, 31182
  };
  
@@ -42,7 +93,7 @@
  static const uint16_t dss_sp_adaptive_gain[] = {
       102,  231,  360,  488,  617,  746,  875, 1004,
      1133, 1261, 1390, 1519, 1648, 1777, 1905, 2034,
-@@ -433,31 +422,6 @@
+@@ -433,31 +421,6 @@ static void dss_sp_unpack_filter(DssSpContext *p)
          p->lpc_filter[i] = dss_sp_filter_cb[i][p->fparam.filter_idx[i]];
  }
  
@@ -74,7 +125,7 @@
  static void dss_sp_add_pulses(int32_t *vector_buf,
                                const struct DssSpSubframe *sf)
  {
-@@ -489,18 +453,6 @@
+@@ -489,18 +452,6 @@ static void dss_sp_gen_exc(int32_t *vector, int32_t *prev_exc,
      }
  }
  
@@ -93,7 +144,7 @@
  static void dss_sp_update_buf(int32_t *hist, int32_t *vector)
  {
      int i;
-@@ -512,156 +464,52 @@
+@@ -512,156 +463,52 @@ static void dss_sp_update_buf(int32_t *hist, int32_t *vector)
          vector[72 - i] = hist[i];
  }
  
@@ -138,9 +189,7 @@
 -
 -    for (a = 0; a < 72; a++) {
 -        int i, tmp = 0;
-+    int n, i;
-+    int32_t f, f_new;
- 
+-
 -        audio_buf[0] = dst[a];
 -
 -        for (i = 14; i >= 0; i--)
@@ -152,6 +201,9 @@
 -        tmp = (tmp + 4096) >> 13;
 -
 -        dst[a] = av_clip_int16(tmp);
++    int n, i;
++    int32_t f, f_new;
++
 +    for (n = 0; n < size; n++) {
 +        f = buf[n] - (int32_t)((k[order - 1] * (int64_t)state[order - 1]) >> 15);
 +        for (i = order - 2; i >= 0; i--) {
@@ -187,13 +239,13 @@
 -    unsigned int val;
 -    int max_val;
 -    int i;
--
--    val = 1;
--    for (i = 0; i < size; i++)
--        val |= FFABS(vector_buf[i]);
 +    int64_t sum_sq = 0;
 +    int i, rms, scale;
  
+-    val = 1;
+     for (i = 0; i < size; i++)
+-        val |= FFABS(vector_buf[i]);
+-
 -    for (max_val = 0; val <= 0x4000; ++max_val)
 -        val *= 2;
 -    return max_val;
@@ -202,7 +254,7 @@
 -static int dss_sp_vector_sum(DssSpContext *p, int size)
 -{
 -    int i, sum = 0;
-     for (i = 0; i < size; i++)
+-    for (i = 0; i < size; i++)
 -        sum += FFABS(p->vector_buf[i]);
 -    return sum;
 -}
@@ -221,15 +273,15 @@
 -        if (vsum_1 > 0xFFFFF)
 -            vsum_1 = 0xFFFFF;
 -    }
--
--    normalize_bits = dss_sp_get_normalize_bits(p->vector_buf, size);
 +        sum_sq += (int64_t)buf[i] * buf[i];
+ 
+-    normalize_bits = dss_sp_get_normalize_bits(p->vector_buf, size);
++    rms = (int)sqrt((double)sum_sq / size);
  
 -    dss_sp_scale_vector(p->vector_buf, normalize_bits - 3, size);
 -    dss_sp_scale_vector(p->audio_buf, normalize_bits, 15);
 -    dss_sp_scale_vector(p->err_buf1, normalize_bits, 15);
-+    rms = (int)sqrt((double)sum_sq / size);
- 
+-
 -    v36 = p->err_buf1[1];
 -
 -    dss_sp_vec_mult(p->filter, tmp_buf, binary_decreasing_array);
@@ -286,11 +338,11 @@
      }
  }
  
-@@ -706,12 +554,13 @@
+@@ -706,12 +553,13 @@ static int dss_sp_decode_one_frame(DssSpContext *p,
                                     int16_t *abuf_dst, const uint8_t *abuf_src)
  {
      int i, j;
-+    int32_t tmp;
++    int32_t tmp, *out;
  
      dss_sp_unpack_coeffs(p, abuf_src);
  
@@ -301,7 +353,7 @@
  
      for (j = 0; j < SUBFRAMES; j++) {
          dss_sp_gen_exc(p->vector_buf, p->history,
-@@ -722,20 +571,35 @@
+@@ -722,20 +570,35 @@ static int dss_sp_decode_one_frame(DssSpContext *p,
  
          dss_sp_update_buf(p->vector_buf, p->history);
  
@@ -329,10 +381,10 @@
  
 +    /* De-emphasis: y[n] = x[n] + (y[n-1] * 3277) >> 15
 +     * alpha = 0.1 in Q15: 0.1 * 32768 = 3277 */
++    out = &p->working_buffer[0][0];
 +    for (i = 0; i < DSS_SP_SAMPLE_COUNT; i++) {
-+        tmp = p->working_buffer[0][i] +
-+              (int32_t)((3277 * (int64_t)p->deemph_state) >> 15);
-+        p->working_buffer[0][i] = tmp;
++        tmp = out[i] + (int32_t)((3277 * (int64_t)p->deemph_state) >> 15);
++        out[i] = tmp;
 +        p->deemph_state = av_clip_int16(tmp);
 +    }
 +
@@ -342,3 +394,71 @@
      return 0;
  }
  
+diff --git a/tests/ref/fate/dss-sp b/tests/ref/fate/dss-sp
+index 0984f11..dc94375 100644
+--- a/tests/ref/fate/dss-sp
++++ b/tests/ref/fate/dss-sp
+@@ -3,33 +3,33 @@
+ #codec_id 0: pcm_s16le
+ #sample_rate 0: 11025
+ #channel_layout_name 0: mono
+-0,          0,          0,      264,      528, 0xa2579e96
+-0,        264,        264,      264,      528, 0xf9b23172
+-0,        528,        528,      264,      528, 0x5571a0fe
+-0,        792,        792,      264,      528, 0x2c989245
+-0,       1056,       1056,      264,      528, 0xc4d3b5b5
+-0,       1320,       1320,      264,      528, 0x0becb08d
+-0,       1584,       1584,      264,      528, 0x71537374
+-0,       1848,       1848,      264,      528, 0xed6e4784
+-0,       2112,       2112,      264,      528, 0x8dc73f7e
+-0,       2376,       2376,      264,      528, 0x20804ba8
+-0,       2640,       2640,      264,      528, 0xcfdd4803
+-0,       2904,       2904,      264,      528, 0x6fad0da5
+-0,       3168,       3168,      264,      528, 0xeaa41f45
+-0,       3432,       3432,      264,      528, 0x99ef463e
+-0,       3696,       3696,      264,      528, 0x5a8c256a
+-0,       3960,       3960,      264,      528, 0x668c253a
+-0,       4224,       4224,      264,      528, 0x29890b2e
+-0,       4488,       4488,      264,      528, 0x6cd51639
+-0,       4752,       4752,      264,      528, 0x6cc95342
+-0,       5016,       5016,      264,      528, 0x2bdc59ea
+-0,       5280,       5280,      264,      528, 0x72ff263d
+-0,       5544,       5544,      264,      528, 0xb5bd3592
+-0,       5808,       5808,      264,      528, 0x16de4402
+-0,       6072,       6072,      264,      528, 0x80195ab4
+-0,       6336,       6336,      264,      528, 0x425c594c
+-0,       6600,       6600,      264,      528, 0x04b32203
+-0,       6864,       6864,      264,      528, 0x688a38ec
+-0,       7128,       7128,      264,      528, 0x34531167
+-0,       7392,       7392,      264,      528, 0xdef83475
+-0,       7656,       7656,      264,      528, 0xf5fe3fe5
++0,          0,          0,      264,      528, 0x88b96735
++0,        264,        264,      264,      528, 0x1d259c43
++0,        528,        528,      264,      528, 0xf67f63c2
++0,        792,        792,      264,      528, 0x6c048ccd
++0,       1056,       1056,      264,      528, 0x0268604c
++0,       1320,       1320,      264,      528, 0x8634bd14
++0,       1584,       1584,      264,      528, 0xa44dea0c
++0,       1848,       1848,      264,      528, 0x5611eb71
++0,       2112,       2112,      264,      528, 0x90c5e725
++0,       2376,       2376,      264,      528, 0x044ee926
++0,       2640,       2640,      264,      528, 0xf341e121
++0,       2904,       2904,      264,      528, 0x9d44e362
++0,       3168,       3168,      264,      528, 0x8a4aab03
++0,       3432,       3432,      264,      528, 0x01b6cff7
++0,       3696,       3696,      264,      528, 0x97d1e05a
++0,       3960,       3960,      264,      528, 0x3767f464
++0,       4224,       4224,      264,      528, 0xe7d7f654
++0,       4488,       4488,      264,      528, 0x9665f2da
++0,       4752,       4752,      264,      528, 0x86edb9ed
++0,       5016,       5016,      264,      528, 0x49f87f4a
++0,       5280,       5280,      264,      528, 0x7aaf9ce6
++0,       5544,       5544,      264,      528, 0xb8b7a9e4
++0,       5808,       5808,      264,      528, 0x6052717f
++0,       6072,       6072,      264,      528, 0x6b515859
++0,       6336,       6336,      264,      528, 0x336da8c2
++0,       6600,       6600,      264,      528, 0x0ed8d83e
++0,       6864,       6864,      264,      528, 0x2f140c3a
++0,       7128,       7128,      264,      528, 0x8d0be6ea
++0,       7392,       7392,      264,      528, 0x3751e9e7
++0,       7656,       7656,      264,      528, 0xce50d311

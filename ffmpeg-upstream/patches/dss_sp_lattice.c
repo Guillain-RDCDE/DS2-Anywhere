@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <math.h>
+
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/mem_internal.h"
@@ -28,14 +30,11 @@
 #include "decode.h"
 #include "get_bits.h"
 
-#include <math.h>
-
 #define SUBFRAMES 4
 #define PULSE_MAX 8
 
 #define DSS_SP_FRAME_SIZE        42
 #define DSS_SP_SAMPLE_COUNT     (66 * SUBFRAMES)
-#define DSS_SP_FORMULA(a, b, c) ((int)((((a) * (1 << 15)) + (b) * (unsigned)(c)) + 0x4000) >> 15)
 
 typedef struct DssSpSubframe {
     int16_t gain;
@@ -554,7 +553,7 @@ static int dss_sp_decode_one_frame(DssSpContext *p,
                                    int16_t *abuf_dst, const uint8_t *abuf_src)
 {
     int i, j;
-    int32_t tmp;
+    int32_t tmp, *out;
 
     dss_sp_unpack_coeffs(p, abuf_src);
 
@@ -591,10 +590,10 @@ static int dss_sp_decode_one_frame(DssSpContext *p,
 
     /* De-emphasis: y[n] = x[n] + (y[n-1] * 3277) >> 15
      * alpha = 0.1 in Q15: 0.1 * 32768 = 3277 */
+    out = &p->working_buffer[0][0];
     for (i = 0; i < DSS_SP_SAMPLE_COUNT; i++) {
-        tmp = p->working_buffer[0][i] +
-              (int32_t)((3277 * (int64_t)p->deemph_state) >> 15);
-        p->working_buffer[0][i] = tmp;
+        tmp = out[i] + (int32_t)((3277 * (int64_t)p->deemph_state) >> 15);
+        out[i] = tmp;
         p->deemph_state = av_clip_int16(tmp);
     }
 
