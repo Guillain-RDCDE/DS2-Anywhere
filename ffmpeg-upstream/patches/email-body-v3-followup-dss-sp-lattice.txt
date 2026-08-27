@@ -1,0 +1,97 @@
+To: ffmpeg-devel@ffmpeg.org
+From: Guillain d'Erceville <guillain@poulpe.us>
+Subject: Re: [FFmpeg-devel] [PATCH v3 0/2] DSS SP synthesis instability -- DLL fully reverse-engineered, root cause confirmed
+In-Reply-To: <20260720171555.3156820-1-guillain@poulpe.us>
+References: <20260720171555.3156820-1-guillain@poulpe.us>
+
+Hi,
+
+Quick follow-up to yesterday's report on the DSS SP synthesis
+instability. We went all the way.
+
+## Summary
+
+We disassembled the Olympus DssDecoder.dll's complete synthesis
+pipeline -- four functions, 2,500 bytes of x86-32 with x87 FPU -- and
+discovered that FFmpeg's dss_sp_sf_synthesis() does five things the DLL
+does not do at all.
+
+## What the DLL actually does
+
+The DLL's synthesis pipeline per subframe is:
+
+    excitation -> lattice IIR 1/A(z) -> de-emphasis -> int16 clamp
+
+That's it. The lattice uses the raw reflection coefficients from the
+codebook, in a standard Burg-form recursion:
+
+    f = input[n] - k[13] * b[13]
+    for i = 12 down to 0:
+        f_new = f - k[i] * b[i]
+        b[i+1] = b[i] + k[i] * f_new
+        f = f_new
+    b[0] = f
+    output[n] = f
+
+The de-emphasis is a first-order IIR with alpha=0.1:
+
+    y[n] = x[n] + 0.1 * y[n-1]
+
+followed by symmetric int16 saturation at +/-32767.
+
+## What dss_sp.c does that the DLL does not
+
+  1. Error correction IIR filter ("shift_sq_sub with err_buf2" -- a
+     14th-order IIR using the raw polynomial coefficients, no bandwidth
+     expansion). This filter can resonate when coefficients are near
+     the unit circle.
+
+  2. FIR pre-filter ("shift_sq_add" with BINARY_DECREASING, gamma=0.5).
+
+  3. IIR synthesis in polynomial direct-form with bandwidth expansion
+     ("shift_sq_sub" with UNC_DECREASING, gamma=0.8). The DLL uses a
+     lattice structure without any bandwidth expansion.
+
+  4. Noise modulation (energy ratio vsum_1/vsum_2, multiplicative
+     envelope with bias=409/32768 and decay=32358/32768).
+
+  5. Dynamic normalization (normalize_bits scaling, inherited from the
+     Q15 integer implementation).
+
+None of these five components exist in the DLL. They were FFmpeg's
+approximation of a pipeline the DLL implements more simply.
+
+## Root cause of the instability
+
+The FFmpeg codebook tables (lpc_filter_cb in dss_sp.c) differ from the
+DLL's real codebook by 1-5%. This produces a slight energy imbalance
+per frame that compounds through the pitch-adaptive codebook feedback
+loop. After ~2,400 frames the cumulative error exceeds the filter's
+dynamic range and the output diverges.
+
+A lattice filter with |k_i| < 1 is intrinsically stable, which is why
+the DLL never hits this. The polynomial direct-form can accumulate the
+same error into resonance.
+
+## What we shipped
+
+We replaced the FFmpeg-style synthesis with the DLL's actual pipeline:
+lattice IIR with raw reflection coefficients, de-emphasis, int16
+conversion. An AGC at 0.15 RMS compensates for the codebook
+approximation error. 13/13 DSS SP files decode stably over their full
+duration, correlation with DLL output is 0.93 (up from 0.80 with the
+old pipeline), and the code is 174 lines shorter.
+
+Full write-up with the disassembly tables and DLL function map:
+https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/16-the-q15-instability.md
+
+The code:
+https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/vendor/dss-codec/src/codec/dss_sp.rs
+
+If anyone wants to port the lattice fix to dss_sp.c, the mapping is
+straightforward -- replace dss_sp_sf_synthesis() with the lattice
+recursion above, drop the five components, add the de-emphasis. Happy
+to help with the C translation.
+
+Thanks,
+Guillain d'Erceville

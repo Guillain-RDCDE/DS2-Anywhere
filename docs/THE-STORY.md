@@ -203,3 +203,16 @@ The chain has to keep going. That's the whole point.
 ---
 
 *Want to see exactly how each piece was done? → [the technical deep-dive](../README.md#the-technical-trail).*
+
+---
+
+## The lattice hunt
+
+*August 2026. The story continues.*
+
+A lawyer's 23-minute recording went silent after one minute. We disassembled
+the Olympus DLL byte by byte and discovered that five components of the
+decoder had been wrong for years -- not wrong enough to notice on short files,
+but wrong enough to blow up on long ones.
+
+**[→ Read the full investigation](THE-LATTICE-HUNT.md)**
