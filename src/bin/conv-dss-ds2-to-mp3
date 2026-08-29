@@ -114,7 +114,11 @@ if [ "$inspect_mode" = 1 ]; then
 fi
 
 # Conversion
-if [ "$encryption" != "none" ] && [ -z "$password" ]; then
+# "unknown" from get_encryption does not mean encrypted, it only means the first
+# four bytes are neither a DSS/DS2 magic nor the \x03enc of an AES container. A
+# DSS file that lost its header looks like that and is still perfectly
+# decodable, so let the decoder decide rather than refusing here.
+if [ "$encryption" != "none" ] && [ "$encryption" != "unknown" ] && [ -z "$password" ]; then
   die 3 "File is encrypted ($encryption). Re-run with --password=<pwd>."
 fi
 
@@ -139,6 +143,9 @@ if ! err=$("$NATIVE" -O "$tmp_wav" "${pwd_arg[@]}" "$decode_input" 2>&1); then
                  -c:a pcm_s16le "$tmp_wav" 2>&1); then
       die 1 "Decode failed (DSS LP via ffmpeg): $err2"
     fi
+  elif [ "$encryption" = "unknown" ]; then
+    hdr=$(head -c 4 "$input" 2>/dev/null | od -An -tx1 | tr -s ' ')
+    die 4 "Unrecognised container (first bytes:$hdr): not a DSS or DS2 file."
   else
     die 1 "Decode failed: $err"
   fi
