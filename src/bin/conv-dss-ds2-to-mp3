@@ -130,7 +130,18 @@ if ! err=$("$NATIVE" -O "$tmp_wav" "${pwd_arg[@]}" "$decode_input" 2>&1); then
   if printf '%s' "$err" | grep -qiE 'encrypt|password'; then
     die 3 "Encrypted file, password invalid or required: $err"
   fi
-  die 1 "Decode failed: $err"
+  # DSS LP carries G.723.1 frames rather than the SP codec, so the native
+  # decoder refuses them by name. That codec is a published standard and
+  # ffmpeg decodes it, so hand the file over instead of giving up: these are
+  # ordinary dictations from older recorders such as the DS4000.
+  if printf '%s' "$err" | grep -qi 'G\.723\.1'; then
+    if ! err2=$("$FFMPEG" -y -loglevel error -i "$decode_input" -ac 1 \
+                 -c:a pcm_s16le "$tmp_wav" 2>&1); then
+      die 1 "Decode failed (DSS LP via ffmpeg): $err2"
+    fi
+  else
+    die 1 "Decode failed: $err"
+  fi
 fi
 [ -s "$tmp_wav" ] || die 1 "Empty WAV produced"
 
