@@ -24,16 +24,18 @@ New here? Start with the [README](../README.md) for the 30-second demo and the i
 | 13 | [The SP re-sync block](13-the-sp-resync-block.md) | The chapter-07 re-sync rule, never ported to the SP demuxer, comes due. Same coin: re-host the parser, read the law off the silicon, port it. 🔁 |
 | 14 | [The compact block](14-the-compact-block-pause.md) | A third way DSS hides a pause — and the only one we didn't find ourselves. It arrived as a pull request. We measured, gated, shipped, and declined the half we couldn't verify. 🤝 |
 | 15 | [The relay runs backward](15-the-relay-runs-backward.md) | A PR from the same contributor: a good fix with a broken half. A shadow bench caught the regression before it merged, scrubbed repros proved it without shipping anyone's voice, and the cause was a golden master that lied — chapter 10 from the other chair. Plus a pin on the door we ship through. 🪞 |
-| 16 | [The Q15 instability](16-the-q15-instability.md) | A codec that correlates at 0.998 for 58 seconds then blows up. The cause: Q15 integer truncation vs the DLL double-precision arithmetic. The fix: a six-line AGC. The discovery: the DLL codebook is 256 doubles in log-space, not 32 integers. 🔊 |
+| 16 | [The Q15 instability](16-the-q15-instability.md) | A codec that correlates at 0.998 for 58 seconds then blows up. The cause: Q15 integer truncation vs the DLL double-precision arithmetic. The fix: a six-line AGC. The discovery: the DLL codebook is 256 doubles in log-space, not 32 integers. 🔊 | ⚠️ **Its cause is wrong — read 17.**
+| 17 | [The framing was wrong all along](17-the-framing-was-wrong.md) | The correction. The runaway was never in the codec: every DSS block declares its own framing and every open implementation skips it. A free oracle (C(72,7) vs a 31-bit field) broke it open, and the bench went 0.5849 → 0.9995. **Also: the rate is 11000 Hz, not 11025.** 🧭
 
 ## How to read it
 
 - **The integration story (00 → 05):** if you want to take an open codec into production, this is the recipe — pain, RE, integration, validation, the WASM→native call, and the lessons.
 - **The detective trilogy-plus (06 → 10):** if you reverse-engineer for a living, start here. Two real bugs hunted to ground (06, 07), then a rigorous investigation into a third (08, 09) that **08 and 09 get confidently wrong** — and 10, the reckoning, which is the single most useful read in the repo: how careful work fools itself, and the cheapest test that breaks the spell.
+- **The correction (16 → 17):** the one where we were wrong in public a second time. 16 and the [Lattice Hunt](THE-LATTICE-HUNT.md) diagnose a codec bug with real rigour and reach the wrong component; 17 is the reckoning, and the most transferable page here after 10 — a stabilising fix that damps a symptom is not evidence you found the cause.
 - **The relay (11 → 15):** the format keeps handing over new locks — a second device family (Grundig/Philips), a codec nobody had decoded, a pause encoding a contributor found before we did, and — the other direction at last — a regression *we* caught in a contributor's pull request before it shipped. This is what an open format looks like when strangers keep pulling the thread, in both directions.
 
 A note on chapters 08 and 09: we did not delete them when their conclusion fell. They're preserved, each behind a banner, because the *method* in them is sound and the *trap* they fell into is the lesson. A reverse-engineering log is only worth something if its dead ends stay marked.
 
 ---
 
-*Sixteen chapters from "impossible for thirty years" to "production in a weekend" — including the wrong turn we're proudest of having written down. 🔓*
+*Seventeen chapters from "impossible for thirty years" to "production in a weekend" — including the two wrong turns we're proudest of having written down. 🔓*

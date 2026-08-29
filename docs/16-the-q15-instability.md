@@ -1,5 +1,11 @@
 # 16 - The Q15 instability
 
+> ## ⚠️ Superseded — the cause below is wrong. Read [17 — The framing was wrong all along](17-the-framing-was-wrong.md).
+>
+> **This chapter blames Q15 truncation in the synthesis filter, and that is not what was happening.** The frames reaching the filter were already misframed by the demuxer, which skips the three framing fields every DSS block declares about itself; a synthesis filter fed reflection coefficients that were never written will diverge whatever its arithmetic. The AGC described below damps the symptom without touching the cause — energy stopped running away, and sample correlation with the reference stayed at 0.03 throughout. We kept watching the number that moved.
+>
+> The real fix is about a hundred lines in the demuxer, and it takes the bench from 0.5849 to 0.9995. Chapter 17 has the whole story, including the free oracle that broke it open: seven pulse positions from 72 slots is C(72,7) = 1,473,109,704, the field is 31 bits, so any larger value is a frame that cannot exist. We kept this chapter, unedited below this banner, because *how* it went wrong is the useful part.
+
 _Or: why a codec that is 99.9% right can still blow up your speakers after one minute._
 
 ## The symptom

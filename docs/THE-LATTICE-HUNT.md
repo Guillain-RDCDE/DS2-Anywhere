@@ -1,5 +1,11 @@
 # The Lattice Hunt
 
+> ## ⚠️ Superseded — the lattice was not the fix. Read [17 — The framing was wrong all along](17-the-framing-was-wrong.md).
+>
+> **The hunt below is real, the detective work is sound, and the conclusion is wrong.** The direct-form synthesis filter was never the problem: the demuxer was handing it frames read a byte out of phase, because every DSS block declares its own framing and every open implementation throws those bytes away. Rebuilding the filter as a lattice made the nonsense *bounded* rather than making the decoder right — correlation with the reference sat at 0.03 before and after.
+>
+> We published this one, to FFmpeg and to the upstream crate, and had to take it back. It stands here unedited as the honest record; [chapter 17](17-the-framing-was-wrong.md) is the correction.
+
 *How we disassembled a codec byte by byte to fix a bug that took exactly 58 seconds to appear.*
 
 ---
