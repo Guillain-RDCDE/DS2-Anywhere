@@ -58,3 +58,6 @@ dist/
 .env.local
 src/etc/audio-cron.conf
 !src/etc/audio-cron.conf.example
+
+# Briefs de travail internes : notes de session, chemins locaux, rien de publiable.
+BRIEF-*.md
