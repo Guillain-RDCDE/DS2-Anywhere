@@ -1,0 +1,77 @@
+Subject: [PATCH 0/2] avformat/dss, avcodec/dss_sp: fix DSS SP framing and sample rate
+
+Hi all,
+
+I have to start by taking something back.
+
+Earlier this week I sent a patch replacing the DSS SP synthesis filter with a
+lattice pipeline (patchwork 60515 and 60517), on the theory that the direct form
+filter was accumulating error and running away. It was a good theory. It was
+also wrong, and I would be grateful if both could be marked rejected.
+
+What happened is a trap worth naming, because I suspect I am not the first to
+walk into it: the lattice rewrite genuinely improved the numbers, so I believed
+it. But the frames reaching the filter were already misframed, and a synthesis
+filter fed coefficients that were never written will produce nonsense whatever
+its structure - the lattice just produced *bounded* nonsense. Energy stopped
+running away, correlation with the reference stayed at 0.03, and I spent two
+days congratulating myself on the first number instead of asking about the
+second. Sorry for the noise on the list.
+
+Here is what it actually was. Two small patches, and I think this is the last
+thing DSS SP needs.
+
+  1/2 sets the sample rate to 11000 Hz. The codec synthesises at 12000 Hz and
+      decimates 11:12, which is 11000 exactly; 11025 has been declared since the
+      decoder landed, and makes every DSS SP file play 0.23% fast.
+
+  2/2 takes the framing from the block headers rather than running on from the
+      first frame to the last. Every 512-byte block already states how much of
+      the previous frame it carries, the byte-swap parity of its first whole
+      frame, and how many frames it holds - and all three were being skipped.
+      On an undisturbed recording the running walk happens to agree with them at
+      every block, which is exactly why this survived so long; on a recording
+      that was paused or edited, it does not, and everything after that point is
+      read a byte out of phase.
+
+In case any of this is useful to a reviewer, here is what convinced me:
+
+  - Against a reference decoder on seven recordings from Olympus and Philips
+    machines, mean sample correlation goes from 0.5849 to 0.9995. Three were
+    misframed and go from about 0.03 to about 0.999, with clipped samples
+    falling from ~0.6% to 0.001%. Of the four that already decoded well, three
+    come out with not one sample different - two of them also shed a fifth of a
+    second of padding that the old walk read past the last declared frame. The
+    fourth turned out to hold a misframed stretch of its own that my sampled
+    measurement windows had walked straight past, which was a useful reminder
+    that a file can be damaged without ever sounding obviously broken.
+
+  - fate-dss-sp and fate-dss-lp pass unchanged. On the FATE sample the block
+    headers say precisely what the old walk assumed, so the output is
+    bit-identical; the only movement in the reference is the two rate labels
+    from patch 1. That is rather the point of 2/2 - where the headers and the
+    walk agree, believing the headers costs nothing.
+
+  - On the rate, the container settles it without needing a decoder at all. A
+    DSS header carries the recording length as an ASCII HHMMSS field, written by
+    the machine itself. Decoded samples divided by that length, over 124
+    recordings longer than ten minutes, gives a median of 11001.6 Hz. Truncation
+    to the second pins a ten-minute file to within 9 Hz, so 11025 sits outside
+    the margin.
+
+  - Across 187 recordings, nothing that decoded before stops decoding, and four
+    files that produced no audio at all now decode. Where honouring the frame
+    count shortens the output, the new length agrees to a tenth of a second with
+    an independent decoder, so what disappeared is audio that was being invented
+    by reading past the end of a block.
+
+Both apply cleanly to current master with git am. I rebuilt from the patches
+themselves rather than from my working tree and re-ran everything above on that
+build, so what is attached is what was measured.
+
+If anyone who knows this corner has a moment, I would really appreciate a look -
+especially at the seek path in 2/2, which is the piece I am least able to
+exercise against real players. And if I have missed something obvious again, say
+so plainly, I would rather hear it here than discover it in another two days. :-)
+
+Thanks for your patience with the false start, and thanks for FFmpeg.

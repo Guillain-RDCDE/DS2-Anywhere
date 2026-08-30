@@ -138,9 +138,19 @@ getting it anyway. Each one starts from the ground; you can stop at any rung.
    rebuilt the codec **bit-exact**. Now a [native Python decoder](grundig/) and an
    [FFmpeg patch](ffmpeg-upstream/patches/avcodec-grundig_sp-decoder.patch).
 
+8. **[The framing was wrong all along](docs/17-the-framing-was-wrong.md)** — the second
+   twist, and the one that stings. We diagnosed a codec bug with real rigour, shipped the
+   fix to FFmpeg and to the upstream crate, and were wrong about which component was
+   broken. What broke it open was giving up on audio metrics: seven pulse positions from
+   72 slots is C(72,7) = 1,473,109,704, the field is 31 bits wide, so any larger value is
+   a frame that *cannot exist*. A free oracle, no reference decoder required. Read it for
+   the trap: **a stabilising fix that damps a symptom is not evidence you found the
+   cause.**
+
 > Short on time? **5 min** → this page · **20 min** → chapter 1 · **30 min** → the two
-> detective stories (3 & 4) · **the twist** → 6 · **the finale** → 7 · **everything** →
-> [docs/](docs/) in order, "impossible for thirty years" to "production in a weekend."
+> detective stories (3 & 4) · **the twists** → 6 and 8 · **the finale** → 7 ·
+> **everything** → [docs/](docs/) in order, "impossible for thirty years" to
+> "production in a weekend."
 
 ## Where it stands now
 
@@ -148,20 +158,23 @@ The work didn't stop at our own servers — it's being handed back to the tools 
 
 - **Into FFmpeg.** FFmpeg is the audio/video engine inside VLC, Chrome, OBS and much of
   the internet. The Olympus DS2 decoder + demuxer and the DSS-SP paused-recording fix
-  have been **submitted to the `ffmpeg-devel` mailing list and are in review**; the
+  have been **submitted to the `ffmpeg-devel` mailing list and are in review**, joined
+  by a two-patch series fixing the DSS SP framing and sample rate for everyone; the
   Grundig SP decoder patch is staged behind them. Once merged, *every* program built on
   FFmpeg reads these files for free, forever — no recipe required.
 - **A public specification.** [The first one ever written](docs/SPEC-grundig-dss-sp.md)
   for the Grundig DSS-SP codec, bit-exact — so nobody has to reverse-engineer it again.
 - **Digital preservation.** A [PRONOM submission](docs/preservation/PRONOM-submission.md)
   so archives and forensic tools can even *recognise* these files in the first place.
-- **DSS SP long-file stability.** The original FFmpeg-derived synthesis (FIR + IIR
-  with bandwidth expansion + noise modulation) was structurally wrong: the Olympus DLL
-  uses a pure **IIR lattice filter** with raw reflection coefficients, no FIR, no noise
-  modulation, and a de-emphasis post-filter. We reverse-engineered the DLL's full
-  synthesis pipeline (4 functions, 2,500 bytes of x86-32) and rewrote the codec to
-  match. 13/13 DSS SP files stable, 0.93 correlation with the DLL, code 174 lines
-  shorter. [Chapter 16 →](docs/16-the-q15-instability.md)
+- **DSS SP: the one we got wrong first, then got right.** Long recordings blew up into
+  noise, so we rebuilt the synthesis filter — published it, and were wrong. The runaway
+  was never in the codec. Every 512-byte DSS block *declares its own framing*, and every
+  open implementation — ours, FFmpeg's, the npm and PyPI ports — skips those bytes and
+  guesses instead. The guess is right until a recording is paused or edited, and wrong
+  for the rest of the file after that. Believing the block takes a reference bench from
+  **0.5849 to 0.9995**, and leaves healthy files bit-identical. The output rate is also
+  **11000 Hz, not 11025** — the container proves it on its own.
+  [Chapter 17 →](docs/17-the-framing-was-wrong.md)
 
 That's the throughline of the project: not just open the lock for ourselves, but leave
 the door open for everyone.
@@ -177,6 +190,10 @@ on the same source file**, not a count of successful decodes:
 - **42 / 42** real production dictations decoded (8 h+ of audio), zero failures.
 - **~3 200** cron passes since go-live, zero errors. The Windows VM stays on standby,
   untouched.
+- **More accurate than the commercial reference.** A DSS recorder writes the length of
+  the recording into the file's own header. On a 23-minute dictation, our chain lands
+  **0.1 s** off that declared length; Switch.exe lands **3.1 s** short, because it plays
+  DSS SP 0.23 % fast. Same samples — correlation 0.9998 — at the right speed.
 
 For the Grundig codec: **byte-for-byte identical** to Grundig's own decoder on every
 sample. [Full methodology →](docs/03-validation-campaign.md)

@@ -1,0 +1,90 @@
+From 52ddfdc297277c211bb0ec702607f19c02bbccef Mon Sep 17 00:00:00 2001
+From: Guillain d'Erceville <guillain@poulpe.us>
+Date: Sat, 29 Aug 2026 22:09:22 +0200
+Subject: [PATCH 1/2] avcodec/dss_sp, avformat/dss: set the DSS SP sample rate
+ to 11000 Hz
+
+DSS SP synthesises at 12000 Hz and dss_sp_update_state resamples by 11/12,
+taking 288 samples per frame down to 264. A frame is therefore 24 ms exactly,
+and the output rate is 12000 * 11 / 12 = 11000 Hz. The 264 samples per frame
+that this decoder already emits only add up to 24 ms at 11000 Hz; at 11025 a
+frame would be 23.9456 ms, which no part of the format accounts for.
+
+Declaring 11025 makes every DSS SP file play 0.23% fast. That is a little over
+three seconds of drift across a 23 minute recording, enough to pull a
+transcript away from its audio.
+
+The container agrees. A DSS header carries the recording length as an ASCII
+HHMMSS field, and dividing the decoded sample count by that length gives the
+rate the recorder intended. Over 124 recordings longer than ten minutes, taken
+from a mixed set of Olympus and Philips machines, the median implied rate is
+11001.6 Hz. The declared length is truncated to the second, so a ten minute
+file pins the rate to within 9 Hz; 11025 sits 23 Hz away, outside that margin
+on the great majority of the set.
+
+The demuxer sets the packet time base from the same field, so it is corrected
+alongside the decoder to keep timestamps and duration consistent.
+
+No decoded sample changes. The fate-dss-sp reference moves by exactly two
+lines, the time base and the reported rate; all thirty frame CRCs and all
+thirty timestamps are untouched, the latter because the decoder and the
+demuxer move together. fate-dss-lp is unaffected, G.723.1 staying at 8000 Hz.
+Both tests pass.
+---
+ libavcodec/dss_sp.c   | 8 +++++++-
+ libavformat/dss.c     | 5 ++++-
+ tests/ref/fate/dss-sp | 4 ++--
+ 3 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/libavcodec/dss_sp.c b/libavcodec/dss_sp.c
+index 9337371b..a149d5e4 100644
+--- a/libavcodec/dss_sp.c
++++ b/libavcodec/dss_sp.c
+@@ -291,7 +291,13 @@ static av_cold int dss_sp_decode_init(AVCodecContext *avctx)
+ {
+     DssSpContext *p = avctx->priv_data;
+     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
+-    avctx->sample_rate    = 11025;
++    /* The codec synthesises at 12000 Hz and dss_sp_update_state resamples by
++     * 11/12 -- 288 samples in, 264 out -- so a frame is exactly 24 ms and the
++     * output rate is 12000 * 11 / 12 = 11000 Hz. Declaring 11025 plays every
++     * DSS SP file 0.23% fast, which is a three second drift over a 23 minute
++     * recording. The 264 samples per frame already in this decoder only add up
++     * to 24 ms at 11000 Hz. */
++    avctx->sample_rate    = 11000;
+     av_channel_layout_uninit(&avctx->ch_layout);
+     avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+ 
+diff --git a/libavformat/dss.c b/libavformat/dss.c
+index ce86b32d..ea59cb56 100644
+--- a/libavformat/dss.c
++++ b/libavformat/dss.c
+@@ -146,7 +146,10 @@ static int dss_read_header(AVFormatContext *s)
+ 
+     if (ctx->audio_codec == DSS_ACODEC_DSS_SP) {
+         st->codecpar->codec_id    = AV_CODEC_ID_DSS_SP;
+-        st->codecpar->sample_rate = 11025;
++        /* See libavcodec/dss_sp.c: the decoder runs at 12000 Hz and
++         * decimates 11:12, so the output rate is 11000 Hz, not 11025. This
++         * also sets the packet time base just below. */
++        st->codecpar->sample_rate = 11000;
+         s->bit_rate = 8 * (DSS_FRAME_SIZE - 1) * st->codecpar->sample_rate
+                         * 512 / (506 * 264);
+     } else if (ctx->audio_codec == DSS_ACODEC_G723_1) {
+diff --git a/tests/ref/fate/dss-sp b/tests/ref/fate/dss-sp
+index 0984f11e..da7600e7 100644
+--- a/tests/ref/fate/dss-sp
++++ b/tests/ref/fate/dss-sp
+@@ -1,7 +1,7 @@
+-#tb 0: 1/11025
++#tb 0: 1/11000
+ #media_type 0: audio
+ #codec_id 0: pcm_s16le
+-#sample_rate 0: 11025
++#sample_rate 0: 11000
+ #channel_layout_name 0: mono
+ 0,          0,          0,      264,      528, 0xa2579e96
+ 0,        264,        264,      264,      528, 0xf9b23172
+-- 
+2.39.5
+
