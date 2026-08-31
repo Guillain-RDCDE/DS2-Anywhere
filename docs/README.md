@@ -4,6 +4,13 @@ A long-form, didactic walkthrough of how a format that was locked for thirty yea
 
 New here? Start with the [README](../README.md) for the 30-second demo and the install. Then come back for the story.
 
+## Two ways in, before the chapters
+
+| | |
+|---|---|
+| 🎧 **[I have a dictation file and need the words](TRANSCRIBE-A-DSS.md)** | The practical guide. No background assumed, ten minutes, and you can stop as soon as your file opens. |
+| 📄 **[Reading Digital Speech Standard](THE-DSS-PAPER.md)** | The technical paper — container, codec, the framing defect, method, validation, results, and the limits of what we claim. The reference document for anyone maintaining a DSS implementation. |
+
 ## The chapters
 
 | # | Chapter | What it's about |

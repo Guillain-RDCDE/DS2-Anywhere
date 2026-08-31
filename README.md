@@ -29,7 +29,7 @@ All of it is in here: the working code, and exactly how it was done.
 ## Contents
 
 - [New here? Three words in plain English](#new-here-three-words-in-plain-english)
-- [Pick your way in](#pick-your-way-in) — four doors, choose your depth
+- [Pick your way in](#pick-your-way-in) — five doors, choose your depth
 - [Try it in 30 seconds](#try-it-in-30-seconds)
 - [What it does, in one picture](#what-it-does-in-one-picture)
 - [The technical trail](#the-technical-trail) — the story, chapter by chapter
@@ -52,6 +52,7 @@ That's it. Everything below builds gently from these.
 
 | | |
 |---|---|
+| 🎧 **I just have a file and need the words** | **[Start here →](docs/TRANSCRIBE-A-DSS.md)** — ten minutes, no audio or programming background assumed. What your file is, how to open it without installing anything, how to get a transcript out, and what to do when something goes wrong. |
 | 📖 **Read it like a thriller** | **[The Story →](docs/THE-STORY.md)** — no code, ~10 minutes. A locked format, a relay of strangers, a bug that turned out to be a human being, and a German lawyer's drawer. It really happened, and every twist links to the chapter that proves it. |
 | 🔧 **Follow the technical trail** | **[Go deeper ↓](#the-technical-trail)** — from "what even *is* a `.ds2` file" up to running a closed-source decoder under a debugger. Built to be readable if you've never reverse-engineered anything. |
 | 🌐 **Decode one right now** | **[Open the in-browser decoder →](https://guillain-rdcde.github.io/DS2-Anywhere/)** — drop a `.ds2`/`.dss` (Olympus, Grundig, even encrypted) and get audio back. Nothing uploaded, nothing installed. |
@@ -146,6 +147,8 @@ getting it anyway. Each one starts from the ground; you can stop at any rung.
    a frame that *cannot exist*. A free oracle, no reference decoder required. Read it for
    the trap: **a stabilising fix that damps a symptom is not evidence you found the
    cause.**
+
+**The whole thing in one document:** **[Reading Digital Speech Standard →](docs/THE-DSS-PAPER.md)** — the technical paper. Container layout, block headers, the 328-bit frame, the decode pipeline, the sample rate, the framing defect and why it survived everywhere, the method that found it, the validation instruments, the results, and an honest list of what we have *not* proved. Written to be the reference: if you maintain a DSS implementation, this is the page to read.
 
 > Short on time? **5 min** → this page · **20 min** → chapter 1 · **30 min** → the two
 > detective stories (3 & 4) · **the twists** → 6 and 8 · **the finale** → 7 ·
