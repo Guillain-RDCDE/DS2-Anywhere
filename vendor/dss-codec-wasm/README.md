@@ -15,7 +15,8 @@ For codec internals and deeper technical background, see [`dss-codec/README.md`]
 
 | Input | Machine-readable `format` | Native rate | Notes |
 |-------|----------------------------|-------------|-------|
-| `.dss` | `dss_sp` | 11025 Hz | DSS SP |
+| `.dss` | `dss_sp` | 11000 Hz | DSS SP |
+| `.dss` older recorders | `dss_lp` | 8000 Hz | DSS LP — frames are G.723.1, not decoded here |
 | `.ds2` standard-play | `ds2_sp` | 12000 Hz | DS2 SP |
 | `.ds2` quality-play | `ds2_qp` | 16000 Hz | DS2 QP |
 | Encrypted `.ds2` | `ds2_sp` or `ds2_qp` after inspection/decode | 12000 or 16000 Hz | Password required for decode or decrypt |
@@ -63,8 +64,8 @@ try {
     : decode(bytes);
 
   try {
-    console.log(result.format);      // "dss_sp" | "ds2_sp" | "ds2_qp"
-    console.log(result.nativeRate);  // 11025 | 12000 | 16000
+    console.log(result.format);      // "dss_sp" | "ds2_sp" | "ds2_qp" | "ds2_qp7" | "grundig_sp"
+    console.log(result.nativeRate);  // 11000 | 12000 | 16000
     console.log(result.samples);     // Float32Array mono PCM in [-1, 1]
   } finally {
     result.free();

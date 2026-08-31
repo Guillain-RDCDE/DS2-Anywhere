@@ -6,7 +6,7 @@ module decodes all the formats:
 
 | Drop this | Decoded as |
 |---|---|
-| `.dss` (Olympus) | DSS-SP @ 11025 Hz |
+| `.dss` (Olympus) | DSS-SP @ 11000 Hz |
 | `.ds2` (Olympus) | DS2 SP @ 12000 / QP @ 16000 Hz |
 | `.ds2` 🔐 encrypted | AES-128/256 — prompts for the password |
 | `.dss` (Grundig) | Grundig DSS-SP @ 16000 Hz (bit-exact) |

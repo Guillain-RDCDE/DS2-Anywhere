@@ -4,12 +4,13 @@ A long-form, didactic walkthrough of how a format that was locked for thirty yea
 
 New here? Start with the [README](../README.md) for the 30-second demo and the install. Then come back for the story.
 
-## Two ways in, before the chapters
+## Three ways in, before the chapters
 
 | | |
 |---|---|
 | 🎧 **[I have a dictation file and need the words](TRANSCRIBE-A-DSS.md)** | The practical guide. No background assumed, ten minutes, and you can stop as soon as your file opens. |
 | 📄 **[Reading Digital Speech Standard](THE-DSS-PAPER.md)** | The technical paper — container, codec, the framing defect, method, validation, results, and the limits of what we claim. The reference document for anyone maintaining a DSS implementation. |
+| 🧠 **[How to circle a closed thing](HOW-TO-CIRCLE-A-CLOSED-THING.md)** | The method, not the result. How to get unstuck on a system that will not explain itself — and how a good hypothesis becomes the most dangerous thing in the room. Written for a first reverse-engineering project and a hundredth alike. |
 
 ## The chapters
 

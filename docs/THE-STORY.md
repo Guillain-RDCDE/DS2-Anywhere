@@ -206,13 +206,40 @@ The chain has to keep going. That's the whole point.
 
 ---
 
-## The lattice hunt
+## The last twist: we were wrong, loudly
 
-*August 2026. The story continues.*
+*August 2026. The story does not end where we thought.*
 
-A lawyer's 23-minute recording went silent after one minute. We disassembled
-the Olympus DLL byte by byte and discovered that five components of the
-decoder had been wrong for years -- not wrong enough to notice on short files,
-but wrong enough to blow up on long ones.
+A lawyer's 23-minute recording turned to static after one minute. We
+disassembled the Olympus DLL, concluded that the decoder's synthesis filter had
+been structurally wrong for years, rebuilt it -- and published the fix. A patch
+to FFmpeg. A correction on the upstream tracker. A pull request that was
+merged.
 
-**[→ Read the full investigation](THE-LATTICE-HUNT.md)**
+It was wrong. Not slightly: wrong about which component was broken.
+
+The runaway was never in the codec. Every 512-byte block of a DSS file
+*declares its own framing* in three header fields, and every open
+implementation on earth -- ours, FFmpeg's, the npm and PyPI ports -- read those
+bytes and threw them away. It works perfectly, right up until a recording was
+paused or edited on the device. After that block, every frame is read one byte
+out of step, and the decoder is asked to make speech out of noise.
+
+Our lattice rewrite had made the noise *quieter*. That is all. Correlation with
+the reference sat at 0.03 before the change and 0.03 after, and we spent two
+days watching the number that was moving instead of the one that was not.
+
+What broke it open was giving up on audio measurements entirely and finding a
+number the file could not fake: seven pulse positions from 72 slots is
+C(72,7) = 1,473,109,704, and the field holding it is 31 bits wide. Any larger
+value is a frame that cannot exist. Ten minutes later we knew the frames were
+wrong before they ever reached the filter.
+
+The real fix is about a hundred lines. The bench goes from 0.5849 to 0.9995,
+and healthy files come out untouched. We wrote to the mailing list and to the
+upstream maintainer to say our earlier patch was wrong and should be rejected.
+He merged the correction and thanked us for the investigation.
+
+**[→ The correction, in full](17-the-framing-was-wrong.md)** ·
+**[→ How we got there, as a method](HOW-TO-CIRCLE-A-CLOSED-THING.md)** ·
+**[→ The wrong turn, preserved](THE-LATTICE-HUNT.md)**

@@ -30,7 +30,7 @@ The Olympus DSS/DS2 codec family implements **CELP (Code-Excited Linear Predicti
 
 | Mode | File Ext | Sample Rate | Frame Bits | Frame Samples | Frame Duration | Bit Rate |
 |------|----------|-------------|------------|---------------|----------------|----------|
-| DSS SP | .dss | 12000 Hz (output: 11025 Hz) | 328 | 264 (after resample) | 24ms | ~13.7 kbps |
+| DSS SP | .dss | 12000 Hz (output: 11000 Hz) | 328 | 264 (after resample) | 24ms | ~13.7 kbps |
 | DS2 SP | .ds2 | 12000 Hz | 328 | 288 | 24ms | ~13.7 kbps |
 | DS2 QP | .ds2 | 16000 Hz | 448 | 256 | 16ms | ~28 kbps |
 
@@ -55,7 +55,10 @@ Bitstream → Demux → Unpack Frame → {
 ### Key Differences from FFmpeg
 
 FFmpeg's built-in `dss_sp` decoder does NOT work for DS2 files:
-- FFmpeg uses 11025 Hz; Olympus SP uses 12000 Hz natively
+- The output rate is 11000 Hz: the codec runs at 12000 Hz natively and
+  decimates 11:12, and 12000 x 11 / 12 = 11000 exactly. FFmpeg declared
+  11025 from 2014 until it was corrected in 2026; a 264-sample frame is
+  24.0 ms at 11000 Hz and 23.9456 ms at 11025, which nothing accounts for.
 - Completely different lookup tables — zero overlap
 - Different frame structure (FFmpeg: 264 bits, Olympus SP: 328 bits)
 - Correlation between FFmpeg and correct output: ~0.01 (random noise)
@@ -421,7 +424,7 @@ The most complex decoder. Uses Q15 fixed-point integer arithmetic throughout, ma
 | Parameter | Value | Source |
 |-----------|-------|--------|
 | Sample rate (native) | 12000 Hz | state[0x08] |
-| Output sample rate | 11025 Hz | After sinc resampling |
+| Output sample rate | 11000 Hz | After sinc resampling (12000 x 11/12) |
 | LPC order | 12 | state[0x00] |
 | Num reflection coefficients | 14 | state[0x1C] |
 | Num subframes | 4 | computed: ftol(24/6.0) |
@@ -433,7 +436,7 @@ The most complex decoder. Uses Q15 fixed-point integer arithmetic throughout, ma
 | Excitation pulses | 7 | state[0x68] |
 | Samples per frame | 288 (before resample) | 72 * 4 |
 | Output samples per frame | 264 (after resample) | 288 * 11/12 |
-| Frame duration | 24 ms | 264 / 11025 |
+| Frame duration | 24 ms | 264 / 11000 |
 
 ### Frame Bit Allocation (328 bits total)
 
@@ -642,7 +645,7 @@ This is the most complex step, involving:
    working_buffer[sf][i] = clip32767((vector_buf[i] * noise[i]) >> 11)
    ```
 
-#### Step 5: Sinc Resampling — 12000 to 11025 Hz (`_update_state`)
+#### Step 5: Sinc Resampling — 12000 to 11000 Hz (`_update_state`)
 
 The 288 working samples (4 subframes x 72) are resampled to 264 output samples using an 11:12 ratio polyphase sinc interpolation filter with 67 coefficients:
 
@@ -1040,7 +1043,7 @@ Row 13: -11239  -7220  -4040  -1406    971   3321   6006   9697
 
 Ratio between consecutive elements: ~0.8 (each element is approximately 80% of the previous).
 
-**SINC (67 entries)** — Polyphase sinc interpolation filter for 12000->11025 Hz:
+**SINC (67 entries)** — Polyphase sinc interpolation filter for 12000->11000 Hz:
 ```
   262   293   323   348   356   336   269   139
   -67  -358  -733 -1178 -1668 -2162 -2607 -2940
@@ -1218,7 +1221,7 @@ Key classes and functions:
   - `_add_pulses()` — 7-pulse fixed codebook excitation
   - `_shift_sq_sub()` / `_shift_sq_add()` — LPC synthesis and error correction filters
   - `_sf_synthesis()` — Noise modulation (PRNG at coefficient 32358, energy ratio scaling)
-  - `_update_state()` — 11:12 sinc interpolation resampling (12000->11025 Hz)
+  - `_update_state()` — 11:12 sinc interpolation resampling (12000->11000 Hz)
 - `read_dss_file()` — Block-aware demuxer with empty block handling
 
 All tables are embedded as Python lists. Integer arithmetic uses Python's arbitrary precision integers with explicit clip16/clip32767 clipping.

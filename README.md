@@ -148,6 +148,8 @@ getting it anyway. Each one starts from the ground; you can stop at any rung.
    the trap: **a stabilising fix that damps a symptom is not evidence you found the
    cause.**
 
+**How it was actually done:** **[How to circle a closed thing →](docs/HOW-TO-CIRCLE-A-CLOSED-THING.md)** — the method rather than the result. How you get unstuck on something that will not explain itself: find the constraint that cannot be violated instead of the signal you can compare, treat a redundant-looking field as a case you have not met, and learn to tell "the symptom moved" from "the cause is gone". Our own wrong turn is the worked example. Useful on your first reverse-engineering project and on your hundredth.
+
 **The whole thing in one document:** **[Reading Digital Speech Standard →](docs/THE-DSS-PAPER.md)** — the technical paper. Container layout, block headers, the 328-bit frame, the decode pipeline, the sample rate, the framing defect and why it survived everywhere, the method that found it, the validation instruments, the results, and an honest list of what we have *not* proved. Written to be the reference: if you maintain a DSS implementation, this is the page to read.
 
 > Short on time? **5 min** → this page · **20 min** → chapter 1 · **30 min** → the two

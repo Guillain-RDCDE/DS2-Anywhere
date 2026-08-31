@@ -13,7 +13,7 @@ Each entry contains:
 | `command_id` | Internal pipeline identifier (7 digits) |
 | `format` | Detected codec format (`ds2_qp` / `ds2_sp` / `dss_sp`) |
 | `encryption` | `none` for every file in this sample |
-| `native_rate_hz` | Native sample rate of the codec (16000 for DS2 QP, 11025 for DSS SP) |
+| `native_rate_hz` | Native sample rate of the codec (16000 for DS2 QP, 11000 for DSS SP) |
 | `src_bytes` | Size of the source DS2/DSS file |
 | `audio_samples` | Number of decoded PCM samples |
 | `audio_duration_s` | Audio duration in seconds (computed from samples / native_rate) |
