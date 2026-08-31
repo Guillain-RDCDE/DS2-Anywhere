@@ -2,6 +2,8 @@
 
 *A technical account of how DSS and DS2 dictation files are structured, how they are decoded, and how a defect that silently corrupted a subset of recordings survived in every open decoder for years — including ours, after we published a confident and wrong diagnosis of it.*
 
+> **Which of these should you read?** This is the reference document: precise, dense, meant to be cited. The same story told as it happened is **[chapter 17](17-the-framing-was-wrong.md)**; the reasoning generalised is **[How to circle a closed thing](HOW-TO-CIRCLE-A-CLOSED-THING.md)**; and if you only want to open a file, **[start here](TRANSCRIBE-A-DSS.md)**.
+
 ---
 
 ## Abstract

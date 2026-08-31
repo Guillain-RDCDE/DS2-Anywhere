@@ -3,6 +3,8 @@
 *No code in this file. Just what happened — and it really happened.*
 *If you want the engineering, every claim here links to a chapter that proves it.*
 
+> **Which of these should you read?** This is the narrative — who did what, in order, no code. For the format itself, read **[the paper](THE-DSS-PAPER.md)**. For how the work was done as a transferable method, read **[How to circle a closed thing](HOW-TO-CIRCLE-A-CLOSED-THING.md)**. If you just have a file to open, none of these — **[start here](TRANSCRIBE-A-DSS.md)**.
+
 ---
 
 ## A format that ate its own history

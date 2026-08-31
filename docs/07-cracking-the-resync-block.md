@@ -1,5 +1,7 @@
 # 07 — Cracking the re-sync block: how we ran the closed-source decoder against itself
 
+> **One claim below was premature.** This chapter concludes that the demuxer is handed back to native code *completely*, and that every structural case the real parser handles is covered. That held for DS2. It did not hold for DSS SP, where the same class of bug survived another two months — the block headers were still being ignored. See **[17 — The framing was wrong all along](17-the-framing-was-wrong.md)**. The method in this chapter is sound and is what eventually found it.
+
 > The previous chapter ended on a confession. One file had an anomaly the empty-block rule didn't fix — a block whose frame count was `19`, impossible for a 506-byte payload — and we punted: detect it, fall back to the Olympus reference, reverse-engineer it "another day." This is that day. It took running the real Olympus decoder inside a debugger we built ourselves, hooking it at the instruction level, and reading its disassembly — and it ended with a one-condition fix, a retracted theory, and a smaller, sharper black hole than the one we started with.
 
 The empty-block bug (chapter 06) was a *missing rule we found written down*. This one was a rule **nobody had ever written down**, for either format, anywhere. So we had to get it from the only thing that knew it: the binary.

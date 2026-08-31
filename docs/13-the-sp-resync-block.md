@@ -1,5 +1,7 @@
 # 13 — The re-sync block strikes back, in SP this time
 
+> **Superseded in scope by [17](17-the-framing-was-wrong.md).** This chapter ports one re-anchoring case to the DSS SP demuxer — the block that declares no frames. That fix was correct and is still in the code, but it turned out to be one instance of a general rule: *every* block declares its framing, and the walk must be re-seeded from it every time, not only on empty blocks. The patch this chapter describes was later withdrawn upstream in favour of the general one.
+
 > Chapter 07 cracked the DS2 **re-sync block**: the demuxer re-anchors every block at the
 > `byte1` offset, and a block whose carry doesn't line up with that anchor is a re-sync block —
 > drop the stale partial, restart at the anchor. We confirmed it byte-for-byte against the real

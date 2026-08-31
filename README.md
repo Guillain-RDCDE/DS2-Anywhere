@@ -13,23 +13,40 @@ the file format those recorders produce was kept secret for thirty years; this p
 opens it on any Linux machine — and gives the fix back to the open-source tools everyone
 uses.
 
+> ### Have a file right now?
+>
+> **[→ Open the decoder](https://guillain-rdcde.github.io/DS2-Anywhere/)** and drag it in.
+> Nothing to install, nothing uploaded — it runs inside your browser tab, and you can
+> prove it by going offline first. Olympus DSS and DS2, Grundig DSS, encrypted files too.
+>
+> Prefer to read before clicking? **[Start here](docs/TRANSCRIBE-A-DSS.md)** — ten
+> minutes, no background assumed.
+
 ---
 
-A handful of strangers who never met picked a thirty-year-old lock — a proprietary
-voice codec that doctors, lawyers and police dictated billions of seconds into, and
-that no open tool on Earth could read. One person reverse-engineered the first piece.
-Others made it portable, then universal. We put it in production over a weekend — and
-then a lawyer in Germany dug an old recorder out of a drawer and handed us a codec
-**even the commercial software couldn't decode.** So we cracked that one too, in an
-afternoon, by interrogating the manufacturer's own decoder inside a debugger we built
-from its DLLs.
+A handful of strangers who never met opened a family of formats that doctors, lawyers
+and police have dictated billions of seconds into.
 
-All of it is in here: the working code, and exactly how it was done.
+Part of it was already ajar, and we are careful to say so: **Oleksij Rempel put a DSS-SP
+decoder into FFmpeg in 2014**, and it worked. The rest was shut — DS2 entirely, and a
+Grundig variant that *nothing on earth* could read, not FFmpeg, not us, not even the
+commercial software. One person reverse-engineered the first piece; others made it
+portable. We put it in production over a weekend, and cracked the Grundig codec in an
+afternoon by interrogating the manufacturer's own decoder inside a debugger built from
+its DLLs.
+
+Then we found that the part everyone assumed was solved had been quietly corrupting a
+whole class of recordings for years — in every open implementation, ours included. We
+diagnosed it wrong first, in public, and had to withdraw the patch. **[That chapter is
+the best one here.](docs/17-the-framing-was-wrong.md)**
+
+All of it is in this repo: the working code, and exactly how it was done — including the
+parts where we were wrong.
 
 ## Contents
 
+- [Pick your way in](#pick-your-way-in) — three doors
 - [New here? Three words in plain English](#new-here-three-words-in-plain-english)
-- [Pick your way in](#pick-your-way-in) — five doors, choose your depth
 - [Try it in 30 seconds](#try-it-in-30-seconds)
 - [What it does, in one picture](#what-it-does-in-one-picture)
 - [The technical trail](#the-technical-trail) — the story, chapter by chapter
@@ -37,6 +54,16 @@ All of it is in here: the working code, and exactly how it was done.
 - [Real-world numbers](#real-world-numbers)
 - [What's in this repo](#whats-in-this-repo)
 - [Credits](#credits--proper-order) · [License](#license)
+
+## Pick your way in
+
+Three doors. Take the one that matches why you are here.
+
+| | |
+|---|---|
+| 🎧 **I have a dictation file and need the words** | **[The practical guide →](docs/TRANSCRIBE-A-DSS.md)** · ten minutes, nothing assumed. What your file is, how to open it with nothing installed, how to get a transcript, and the four things that actually go wrong. Or skip straight to the **[in-browser decoder](https://guillain-rdcde.github.io/DS2-Anywhere/)**. |
+| 🧠 **I want to understand how it was done** | Three ways, depending on your appetite: **[The Story](docs/THE-STORY.md)** (no code, ~10 min, reads like a thriller) · **[The paper](docs/THE-DSS-PAPER.md)** (the reference: container, codec, the defect, method, validation, and what we have *not* proved) · **[How to circle a closed thing](docs/HOW-TO-CIRCLE-A-CLOSED-THING.md)** (the method, generalised — useful even if you never touch a DSS file). The chapter-by-chapter trail is **[below ↓](#the-technical-trail)**. |
+| 🛠 **I want to run it, or improve it** | **[30 seconds ↓](#try-it-in-30-seconds)** to convert a file · **[CONTRIBUTING](.github/CONTRIBUTING.md)** for setup, scope and how patches get reviewed. A file that fails to decode is genuinely useful to us — two of the supported formats exist because someone turned up with one. |
 
 ## New here? Three words in plain English
 
@@ -47,16 +74,6 @@ You don't need any audio or programming background to follow this repo. Three te
 - **Reverse-engineering** — working out the secret recipe yourself, by careful observation, because the manufacturer never published it.
 
 That's it. Everything below builds gently from these.
-
-## Pick your way in
-
-| | |
-|---|---|
-| 🎧 **I just have a file and need the words** | **[Start here →](docs/TRANSCRIBE-A-DSS.md)** — ten minutes, no audio or programming background assumed. What your file is, how to open it without installing anything, how to get a transcript out, and what to do when something goes wrong. |
-| 📖 **Read it like a thriller** | **[The Story →](docs/THE-STORY.md)** — no code, ~10 minutes. A locked format, a relay of strangers, a bug that turned out to be a human being, and a German lawyer's drawer. It really happened, and every twist links to the chapter that proves it. |
-| 🔧 **Follow the technical trail** | **[Go deeper ↓](#the-technical-trail)** — from "what even *is* a `.ds2` file" up to running a closed-source decoder under a debugger. Built to be readable if you've never reverse-engineered anything. |
-| 🌐 **Decode one right now** | **[Open the in-browser decoder →](https://guillain-rdcde.github.io/DS2-Anywhere/)** — drop a `.ds2`/`.dss` (Olympus, Grundig, even encrypted) and get audio back. Nothing uploaded, nothing installed. |
-| 🛠 **Run it yourself** | **[30 seconds ↓](#try-it-in-30-seconds)** — drop a file in, get an MP3 out. |
 
 ---
 
@@ -192,9 +209,12 @@ on the same source file**, not a count of successful decodes:
 - **A/B vs Switch.exe** (same `.ds2`, both chains, both MP3s through the same Whisper
   API): transcripts **functionally identical** — 16.2 % vs 17.2 % low-confidence words,
   inside Whisper's own run-to-run variance. The chains are interchangeable downstream.
-- **42 / 42** real production dictations decoded (8 h+ of audio), zero failures.
-- **~3 200** cron passes since go-live, zero errors. The Windows VM stays on standby,
-  untouched.
+- **1678 / 1685** recordings on the production server decode end to end. The seven that
+  do not contain no audio at all: two images renamed `.dss`, one file of 10 bytes, two of
+  **0 bytes**, and two truncated to their headers — one of which declares a 7680-byte
+  header inside a 1024-byte file. In other words, **every real dictation**.
+- **144 049** cron passes since go-live on 23 May 2026, zero errors. The Windows VM has
+  been on standby and untouched since 19 May.
 - **More accurate than the commercial reference.** A DSS recorder writes the length of
   the recording into the file's own header. On a 23-minute dictation, our chain lands
   **0.1 s** off that declared length; Switch.exe lands **3.1 s** short, because it plays
@@ -209,12 +229,14 @@ sample. [Full methodology →](docs/03-validation-campaign.md)
 - 🛠 **[src/](src/)** — the integration code: CLI, cron, HTTP daemon, admin web UI. Sanitized; the patterns are reusable as-is.
 - 🎙 **[grundig/](grundig/)** — the native Grundig DSS-SP decoder (pure Python, bit-exact) + its tables.
 - 🎬 **[ffmpeg-upstream/](ffmpeg-upstream/)** — the FFmpeg patches (DS2 decoder + demuxer, the DSS-SP paused-recording fix, and the Grundig SP decoder), the ones submitted to `ffmpeg-devel` plus their test samples and cover notes.
+- 🤝 **[.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)** — local setup, what is in and out of scope, commit and PR conventions. Start here if you want to add a device family, or if a file of yours refuses to decode.
 - 📐 **[the formal spec](docs/SPEC-grundig-dss-sp.md)** — the world's first public specification of the Grundig DSS-SP codec (bit-exact), plus a [PRONOM submission](docs/preservation/PRONOM-submission.md) so digital-preservation tools can identify these files at all.
 
 ## Credits — proper order
 
 The intellectual heavy-lifting belongs to the people who opened the locks:
 
+- **Oleksij Rempel** — `libavcodec/dss_sp.c` in FFmpeg, **2014**. The first open DSS SP decoder, and the only one for twelve years. The bug we found in that corner was in the demuxer around it, not in his codec.
 - **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that started all of it. MIT, February 2026.
 - **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) + [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (the Rust crate our Dockerfile uses). MIT.
 - **Patrick Domack** — the [FFmpeg C port](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) of the spec. MIT / public domain.

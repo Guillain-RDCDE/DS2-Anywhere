@@ -2,6 +2,8 @@
 
 *Or: how a confidently published fix damped a symptom for two days while the actual bug sat six bytes away, in a header everyone had agreed to skip.*
 
+> **Which of these should you read?** This chapter is the narrative of one defect, told as it happened. The same material stated precisely, with the container and codec around it, is **[the paper](THE-DSS-PAPER.md)** (§5 for the defect). The reasoning generalised beyond DSS is **[How to circle a closed thing](HOW-TO-CIRCLE-A-CLOSED-THING.md)**.
+
 ---
 
 This chapter closes the thread that [16 — The Q15 instability](16-the-q15-instability.md) and [The Lattice Hunt](THE-LATTICE-HUNT.md) opened. Both of those are wrong about the cause, and they are kept standing behind banners, because the way they went wrong is the most useful thing in them.

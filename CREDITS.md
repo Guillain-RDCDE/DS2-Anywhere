@@ -16,6 +16,20 @@ Before this work, DS2 was undecodable on any open-source stack. After this work,
 
 The full story of how this work was done is in [docs/01-reverse-engineering.md](docs/01-reverse-engineering.md).
 
+### Oleksij Rempel — the DSS SP decoder in FFmpeg, 2014
+
+Twelve years before any of the rest of this, Oleksij Rempel contributed `libavcodec/dss_sp.c`
+and `libavformat/dss.c` to FFmpeg — the first and, until 2026, the only open decoder for
+Olympus DSS SP. Anyone who has ever opened a `.dss` with VLC, ffmpeg, or anything built on
+them has used his work without knowing it.
+
+We spent August 2026 finding a bug in that corner and were, for a while, quite pleased with
+ourselves. It is worth being precise about what we actually found: **the defect was in the
+demuxer's framing walk, not in his codec**, and it only ever bit on recordings that had been
+paused or edited on the device. His decoder was correct, and had been correct on every file
+anyone tested for twelve years. Our contribution there is a hundred lines on top of a
+foundation somebody else laid and maintained for free.
+
 ### Gaspard Petit — [gaspardpetit/dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) and [gaspardpetit/dss-codec](https://github.com/gaspardpetit/dss-codec)
 
 The WASM build of the codec (`dss-codec-wasm`), the npm packaging, the JavaScript bindings, the streaming decoder API, the wasm-bindgen wrapper. MIT licensed. This is what made the codec usable from any JS/TS project (Node, browser, edge worker) without needing a Rust toolchain.
