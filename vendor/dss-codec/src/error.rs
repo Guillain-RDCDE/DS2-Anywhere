@@ -14,6 +14,9 @@ pub enum DecodeError {
     #[error("unsupported DS2 format type: {0}")]
     UnsupportedFormat(u8),
 
+    #[error("DSS LP file: the frames are G.723.1 (block frame mode {0}), not the DSS SP codec this decoder implements")]
+    DssLp(u8),
+
     #[error("encrypted DS2 error: {0}")]
     EncryptedDs2(String),
 

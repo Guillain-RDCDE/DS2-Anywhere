@@ -107,7 +107,9 @@ fn format_name(format: dss_codec_core::demux::AudioFormat) -> String {
         dss_codec_core::demux::AudioFormat::DssSp => "dss_sp".to_string(),
         dss_codec_core::demux::AudioFormat::Ds2Sp => "ds2_sp".to_string(),
         dss_codec_core::demux::AudioFormat::Ds2Qp => "ds2_qp".to_string(),
+        dss_codec_core::demux::AudioFormat::Ds2Qp7 => "ds2_qp7".to_string(),
         dss_codec_core::demux::AudioFormat::GrundigSp => "grundig_sp".to_string(),
+        dss_codec_core::demux::AudioFormat::DssLp => "dss_lp".to_string(),
     }
 }
 

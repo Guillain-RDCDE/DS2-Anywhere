@@ -1,14 +1,8 @@
-//! DSS SP decoder — matching DssDecoder.dll's exact pipeline.
+//! DSS SP decoder — Q15 integer arithmetic matching FFmpeg dss_sp.c / DssDecoder.dll.
 //!
-//! DLL pipeline (discovered 27/08/2026 by full RE):
-//!   1. Dequantize reflection coefficients from codebook
-//!   2. Per subframe: excitation (adaptive CB + pulses + history update)
-//!   3. Per subframe: lattice IIR 1/A(z) with RAW reflection coefficients
-//!   4. Tilt filter: y = 0.1 * y_prev + x
-//!   5. Sinc resampling 12000 -> 11025 Hz → int16
-//!
-//! NO error correction filter, NO FIR pre-filter, NO bandwidth expansion,
-//! NO noise modulation, NO normalize_bits scaling.
+//! Architecture: CELP with 14 reflection coefficients, Levinson recursion,
+//! pitch-adaptive excitation, 7-pulse fixed codebook, cascaded LPC synthesis +
+//! error correction, noise modulation, and 11:12 sinc resampling (12000→11000 Hz).
 
 use crate::bitstream::BitstreamReader;
 use crate::tables::dss_sp::*;
@@ -16,7 +10,87 @@ use crate::tables::dss_sp::*;
 const SUBFRAMES: usize = 4;
 const SUBFRAME_SIZE: usize = 72;
 const OUTPUT_SAMPLES: usize = 264;
-const LPC_ORDER: usize = 14;
+
+/// La zone shift_in vit juste apres les 187 echantillons d'historique.
+const SHIFT_IN_OFF: usize = 187;
+const SHIFT_IN_LEN: usize = 23;
+
+fn clip16(x: i64) -> i64 {
+    x.clamp(-32768, 32767)
+}
+
+/// FFmpeg dss_sp_clip_sinc_pcm: values in [-32768, 32767]
+/// pass through; anything beyond clamps to +-32767. This preserves -32768
+/// (unlike a plain +-32767 clamp) and maps out-of-range negatives to -32767
+/// (unlike av_clip_int16). It is the decoder's internal clip everywhere, and
+/// also the output clip on repack (NCH) streams.
+fn clip_sinc_pcm(x: i64) -> i64 {
+    if (-32768..=32767).contains(&x) {
+        x
+    } else if x <= 0 {
+        -32767
+    } else {
+        32767
+    }
+}
+
+/// DSS_SP_FORMULA: ((a * 32768 + b * c) + 16384) >> 15
+fn formula(a: i64, b: i64, c: i64) -> i64 {
+    ((a * 32768 + b * c) + 16384) >> 15
+}
+
+/// Combinatorial-table pulse-position decode (FFmpeg dss_sp_decode_pulse_pos_d32
+/// / the pulse_dec_mode table path — both use the same table numerically).
+fn decode_pulse_pos_table(cp: i64, pulse_pos: &mut [usize; 7]) {
+    let mut pulse = 7usize;
+    let mut pulse_idx = 71usize;
+    let mut c = cp;
+    for slot in pulse_pos.iter_mut() {
+        while c < COMBINATORIAL_TABLE[pulse][pulse_idx] {
+            if pulse_idx == 0 {
+                break;
+            }
+            pulse_idx -= 1;
+        }
+        c -= COMBINATORIAL_TABLE[pulse][pulse_idx];
+        pulse -= 1;
+        *slot = pulse_idx;
+    }
+}
+
+/// Alternate placement decode (FFmpeg dss_sp_decode_pulse_pos_alt). Succeeds
+/// only when all 7 pulses place and the remainder is exactly 0.
+///
+/// Uses u32 wrapping arithmetic to match FFmpeg's `unsigned int` exactly: the
+/// Pascal-triangle update can underflow, and u32 wrap (vs a signed value going
+/// negative) flips the `<=` comparison, changing placements for some cp values.
+fn decode_pulse_pos_alt(cp: i64, pulse_pos: &mut [usize; 7]) -> bool {
+    let mut c72: [u32; 8] = [
+        72, 2556, 59640, 1028790, 13991544, 156238908, 1473109704, 3379081753,
+    ];
+    let mut index = 6usize;
+    let mut placements = 0;
+    pulse_pos[6] = 0;
+    let mut combined = cp as u32;
+    for i in (0..=71i32).rev() {
+        if c72[index] <= combined {
+            combined = combined.wrapping_sub(c72[index]);
+            pulse_pos[6 - index] = i as usize;
+            placements += 1;
+            if index == 0 {
+                break;
+            }
+            index -= 1;
+        }
+        c72[0] = c72[0].wrapping_sub(1);
+        if index > 0 {
+            for a in 0..index {
+                c72[a + 1] = c72[a + 1].wrapping_sub(c72[a]);
+            }
+        }
+    }
+    combined == 0 && placements == 7
+}
 
 struct SubframeParams {
     combined_pulse_pos: i64,
@@ -26,14 +100,29 @@ struct SubframeParams {
 }
 
 pub struct DssSpDecoder {
-    excitation: Vec<f64>,
-    history: Vec<f64>,
-    working_buffer: [[f64; SUBFRAME_SIZE]; SUBFRAMES],
-    lattice_state: [f64; LPC_ORDER],
-    lpc_filter: [f64; LPC_ORDER],
-    vector_buf: [f64; SUBFRAME_SIZE],
-    tilt_state: f64,
+    excitation: Vec<i64>,
+    /// 187 echantillons d'excitation, puis shift_in[0..22] a l'offset 187.
+    history: Vec<i64>,
+    working_buffer: [[i64; SUBFRAME_SIZE]; SUBFRAMES],
+    audio_buf: [i64; 15],
+    err_buf1: [i64; 15],
+    err_buf2: [i64; 15],
+    lpc_filter: [i64; 14],
+    filter: [i64; 15],
+    vector_buf: [i64; SUBFRAME_SIZE],
+    noise_state: i64,
     pulse_dec_mode: bool,
+    shift_amount: i32,
+    /// Etat porte par le post-filtre applique apres la synthese LPC.
+    post_lpc_shift: i64,
+    /* Pulse-decode routing, matching FFmpeg dss_sp.c.
+     * comb_pulse_mode: frame-0 flag (b0&0x80 ? b0&1 : 0).
+     * repack: per-frame; comb streams read bit7 of byte1, else always 1.
+     * repack_pulse_tbl: sticky table-decode latch (cleared only on cp clamp). */
+    comb_pulse_mode: bool,
+    repack: bool,
+    repack_pulse_tbl: bool,
+    frame_idx: usize,
 }
 
 impl Default for DssSpDecoder {
@@ -45,23 +134,34 @@ impl Default for DssSpDecoder {
 impl DssSpDecoder {
     pub fn new() -> Self {
         Self {
-            excitation: vec![0.0; 288 + 6],
-            history: vec![0.0; 187],
-            working_buffer: [[0.0; SUBFRAME_SIZE]; SUBFRAMES],
-            lattice_state: [0.0; LPC_ORDER],
-            lpc_filter: [0.0; LPC_ORDER],
-            vector_buf: [0.0; SUBFRAME_SIZE],
-            tilt_state: 0.0,
+            excitation: vec![0; 288 + 6],
+            history: vec![0; SHIFT_IN_OFF + SHIFT_IN_LEN],
+            working_buffer: [[0; SUBFRAME_SIZE]; SUBFRAMES],
+            audio_buf: [0; 15],
+            err_buf1: [0; 15],
+            err_buf2: [0; 15],
+            lpc_filter: [0; 14],
+            filter: [0; 15],
+            vector_buf: [0; SUBFRAME_SIZE],
+            noise_state: 0,
             pulse_dec_mode: true,
+            shift_amount: 0,
+            post_lpc_shift: 0,
+            comb_pulse_mode: false,
+            repack: false,
+            repack_pulse_tbl: false,
+            frame_idx: 0,
         }
     }
 
     pub fn decode_frame(&mut self, pkt: &[u8]) -> Vec<i16> {
         let (filter_idx, sf_adaptive_gain, pitch_lag, subframes) = self.unpack_coeffs(pkt);
+
         self.unpack_filter(&filter_idx);
+        self.convert_coeffs();
 
         for j in 0..SUBFRAMES {
-            self.gen_exc(pitch_lag[j], ADAPTIVE_GAIN[sf_adaptive_gain[j]]);
+            self.gen_exc(pitch_lag[j], ADAPTIVE_GAIN[sf_adaptive_gain[j]] as i64);
             self.add_pulses(&subframes[j]);
             self.update_buf();
 
@@ -69,61 +169,58 @@ impl DssSpDecoder {
                 self.vector_buf[i] = self.history[SUBFRAME_SIZE - i];
             }
 
-            // Lattice IIR synthesis 1/A(z) — raw reflection coefficients, no expansion
-            for n in 0..SUBFRAME_SIZE {
-                let mut f = self.vector_buf[n] - self.lpc_filter[LPC_ORDER - 1] * self.lattice_state[LPC_ORDER - 1];
-                for i in (0..LPC_ORDER - 1).rev() {
-                    let f_new = f - self.lpc_filter[i] * self.lattice_state[i];
-                    self.lattice_state[i + 1] = self.lattice_state[i] + self.lpc_filter[i] * f_new;
-                    f = f_new;
-                }
-                self.lattice_state[0] = f;
-                self.working_buffer[j][n] = f;
+            let shift = 13 - self.shift_amount;
+
+            // Sur les flux non repack, la zone shift_in suit l'etat du filtre
+            // d'erreur.
+            if !self.repack {
+                self.sync_shift_in_from_err();
             }
+
+            // Les deux premieres sous-trames du tout premier paquet d'un flux
+            // non repack passent par une variante qui avance l'etat d'erreur
+            // d'un pas supplementaire.
+            if !self.repack && self.frame_idx == 0 && j < 2 {
+                self.shift_sq_sub_comb_pulse(shift, j == 1);
+            } else {
+                self.shift_sq_sub(shift);
+            }
+
+            self.post_lpc_shift = apply_post_lpc(&mut self.vector_buf, self.post_lpc_shift);
+
+            self.sf_synthesis(self.lpc_filter[0], j);
         }
 
-        let mut working_flat = [0.0f64; 288];
+        // Flatten working buffer
+        let mut working_flat = [0i64; 288];
         for j in 0..SUBFRAMES {
             working_flat[j * SUBFRAME_SIZE..(j + 1) * SUBFRAME_SIZE]
                 .copy_from_slice(&self.working_buffer[j]);
         }
 
-        // AGC on working_flat: compensate for accumulated codebook error
-        for j in 0..SUBFRAMES {
-            let start = j * SUBFRAME_SIZE;
-            let sum_sq: f64 = working_flat[start..start + SUBFRAME_SIZE].iter()
-                .map(|&v| v * v)
-                .sum();
-            let rms = (sum_sq / SUBFRAME_SIZE as f64).sqrt();
-            if rms > 0.15 {
-                let scale = 0.15 / rms;
-                for i in start..start + SUBFRAME_SIZE {
-                    working_flat[i] *= scale;
-                }
-            }
-        }
-
-        // Tilt filter (DLL func_177F0) + int16 quantization
-        // The DLL converts to int16 BETWEEN the lattice and sinc resampler.
-        // This quantization step is critical for stability — it prevents
-        // unbounded energy accumulation in the sinc resampler input.
-        for i in 0..288 {
-            let y = 0.1 * self.tilt_state + working_flat[i];
-            // Int16 quantization matching DLL: round, clamp to [-32767,32767], back to f64
-            let quantized = (y * 32768.0 + 0.5).floor().clamp(-32767.0, 32767.0);
-            working_flat[i] = quantized / 32768.0;
-            self.tilt_state = working_flat[i];
-        }
-
-        self.update_state(&working_flat)
+        let out = self.update_state(&working_flat);
+        self.frame_idx += 1;
+        out
     }
 
     fn unpack_coeffs(
         &mut self,
         pkt: &[u8],
     ) -> (Vec<usize>, Vec<usize>, Vec<usize>, Vec<SubframeParams>) {
+        // Stream routing: comb_pulse_mode is a frame-0 flag; repack
+        // is per-packet on comb streams (bit7 of byte1) and always 1 otherwise.
+        if self.frame_idx == 0 {
+            self.comb_pulse_mode = (pkt[0] & 0x80) != 0 && (pkt[0] & 1) != 0;
+        }
+        self.repack = if self.comb_pulse_mode {
+            (pkt[1] >> 7) & 1 != 0
+        } else {
+            true
+        };
+
         let mut reader = BitstreamReader::new(pkt);
 
+        // Reflection coefficient indices: 2x5 + 6x4 + 6x3 = 52 bits
         let mut filter_idx = Vec::with_capacity(14);
         for _ in 0..2 {
             filter_idx.push(reader.read_bits(5) as usize);
@@ -135,12 +232,14 @@ impl DssSpDecoder {
             filter_idx.push(reader.read_bits(3) as usize);
         }
 
+        // Per-subframe: 5 + 31 + 6 + 7*3 = 63 bits x 4 = 252 bits
         let mut sf_adaptive_gain = Vec::with_capacity(SUBFRAMES);
         let mut subframes = Vec::with_capacity(SUBFRAMES);
 
         for _ in 0..SUBFRAMES {
             let ag = reader.read_bits(5) as usize;
             sf_adaptive_gain.push(ag);
+
             let combined_pulse_pos = reader.read_bits(31) as i64;
             let gain = reader.read_bits(6) as usize;
             let mut pulse_val = [0usize; 7];
@@ -155,22 +254,38 @@ impl DssSpDecoder {
             });
         }
 
+        // Decode pulse positions. Mirrors FFmpeg dss_sp.c: comb
+        // streams (repack==0) use the plain combinatorial table; repack streams
+        // (0a8/DS23 clean CELP; some 4bed frames) try an alternate placement
+        // decode first and fall back to the table via a sticky latch.
         for j in 0..SUBFRAMES {
             let combined = subframes[j].combined_pulse_pos;
             if combined < C72_BINOMIALS[7] {
-                if self.pulse_dec_mode {
-                    let mut pulse = 7usize;
-                    let mut pulse_idx = 71usize;
+                if self.repack {
                     let mut cp = combined;
-                    for _i in 0..7 {
-                        while cp < COMBINATORIAL_TABLE[pulse][pulse_idx] {
-                            if pulse_idx == 0 { break; }
-                            pulse_idx -= 1;
-                        }
-                        cp -= COMBINATORIAL_TABLE[pulse][pulse_idx];
-                        pulse -= 1;
-                        subframes[j].pulse_pos[_i] = pulse_idx;
+                    if cp > C72_BINOMIALS[6] - 1 {
+                        // Un indice au-dela du domaine 7-parmi-72 se ramene a
+                        // sa borne. Ce n'est pas une raison pour condamner le
+                        // decodage par table de toutes les trames suivantes :
+                        // une fois pulse_dec_mode eteint, les trames hors
+                        // repack ne decodaient plus aucune position et leurs
+                        // sept impulsions restaient toutes en 0.
+                        cp = C72_BINOMIALS[6] - 1;
+                        self.repack_pulse_tbl = false;
                     }
+                    if self.repack_pulse_tbl {
+                        decode_pulse_pos_table(cp, &mut subframes[j].pulse_pos);
+                    } else {
+                        let mut alt = [0usize; 7];
+                        if decode_pulse_pos_alt(cp, &mut alt) {
+                            subframes[j].pulse_pos = alt;
+                        } else {
+                            self.repack_pulse_tbl = true;
+                            decode_pulse_pos_table(cp, &mut subframes[j].pulse_pos);
+                        }
+                    }
+                } else if self.pulse_dec_mode {
+                    decode_pulse_pos_table(combined, &mut subframes[j].pulse_pos);
                 }
             } else {
                 self.pulse_dec_mode = false;
@@ -182,7 +297,9 @@ impl DssSpDecoder {
                     if c72[index] <= cp {
                         cp -= c72[index];
                         subframes[j].pulse_pos[6 - index] = i as usize;
-                        if index == 0 { break; }
+                        if index == 0 {
+                            break;
+                        }
                         index -= 1;
                     }
                     c72[0] -= 1;
@@ -195,16 +312,20 @@ impl DssSpDecoder {
             }
         }
 
+        // Combined pitch (24 bits)
         let combined_pitch = reader.read_bits(24) as u64;
+
         let mut pitch_lag = vec![0usize; SUBFRAMES];
         pitch_lag[0] = ((combined_pitch % 151) + 36) as usize;
         let mut cp = combined_pitch / 151;
+
         for i in 1..SUBFRAMES - 1 {
             pitch_lag[i] = (cp % 48) as usize;
             cp /= 48;
         }
         pitch_lag[SUBFRAMES - 1] = cp.min(47) as usize;
 
+        // Convert delta pitch to absolute
         let mut pl = pitch_lag[0];
         for i in 1..SUBFRAMES {
             if pl > 162 {
@@ -221,12 +342,50 @@ impl DssSpDecoder {
     }
 
     fn unpack_filter(&mut self, filter_idx: &[usize]) {
-        for i in 0..LPC_ORDER {
-            self.lpc_filter[i] = FILTER_CB[i][filter_idx[i]];
+        for i in 0..14 {
+            self.lpc_filter[i] = FILTER_CB[i][filter_idx[i]] as i64;
         }
     }
 
-    fn gen_exc(&mut self, pitch_lag: usize, gain: f64) {
+    fn convert_coeffs(&mut self) {
+        self.shift_amount = 0;
+        self.filter[0] = 0x2000;
+        let mut overflow = false;
+
+        for a in 0..14 {
+            let a_plus = a + 1;
+            self.filter[a_plus] = self.lpc_filter[a] >> 2;
+            for i in 1..=(a_plus / 2) {
+                let coeff_1 = self.filter[i];
+                let coeff_2 = self.filter[a_plus - i];
+                let tmp1 = formula(coeff_1, self.lpc_filter[a], coeff_2);
+                let tmp2 = formula(coeff_2, self.lpc_filter[a], coeff_1);
+                if !(-32768..=32767).contains(&tmp1) || !(-32768..=32767).contains(&tmp2) {
+                    overflow = true;
+                }
+                self.filter[i] = clip16(tmp1);
+                self.filter[a_plus - i] = clip16(tmp2);
+            }
+        }
+
+        if overflow {
+            self.shift_amount = 1;
+            self.filter[0] = 0x1000;
+            for a in 0..14 {
+                let a_plus = a + 1;
+                self.filter[a_plus] = self.lpc_filter[a] >> 3;
+                for i in 1..=(a_plus / 2) {
+                    let coeff_1 = self.filter[i];
+                    let coeff_2 = self.filter[a_plus - i];
+                    self.filter[i] = clip16(formula(coeff_1, self.lpc_filter[a], coeff_2));
+                    self.filter[a_plus - i] =
+                        clip16(formula(coeff_2, self.lpc_filter[a], coeff_1));
+                }
+            }
+        }
+    }
+
+    fn gen_exc(&mut self, pitch_lag: usize, gain: i64) {
         if pitch_lag < SUBFRAME_SIZE {
             for i in 0..SUBFRAME_SIZE {
                 self.vector_buf[i] = self.history[pitch_lag - i % pitch_lag];
@@ -236,15 +395,19 @@ impl DssSpDecoder {
                 self.vector_buf[i] = self.history[pitch_lag - i];
             }
         }
+
         for i in 0..SUBFRAME_SIZE {
-            self.vector_buf[i] = gain * self.vector_buf[i];
+            let tmp = (gain * self.vector_buf[i]) >> 11;
+            self.vector_buf[i] = clip_sinc_pcm(tmp);
         }
     }
 
     fn add_pulses(&mut self, sf: &SubframeParams) {
         for i in 0..7 {
             let pos = sf.pulse_pos[i];
-            let val = FIXED_CB_GAIN[sf.gain] * PULSE_VAL[sf.pulse_val[i]];
+            let val =
+                (FIXED_CB_GAIN[sf.gain] as i64 * PULSE_VAL[sf.pulse_val[i]] as i64 + 0x4000)
+                    >> 15;
             self.vector_buf[pos] += val;
         }
     }
@@ -258,7 +421,186 @@ impl DssSpDecoder {
         }
     }
 
-    fn update_state(&mut self, working_flat: &[f64]) -> Vec<i16> {
+    /// Filtre d'erreur direct-form. La valeur reinjectee dans l'anneau est
+    /// ECRETEE, pas la valeur brute : sans cela le filtre diverge sur les
+    /// passages forts.
+    fn shift_sq_sub(&mut self, shift: i32) {
+        for a in 0..SUBFRAME_SIZE {
+            let mut tmp = self.vector_buf[a] * self.filter[0];
+            for i in (1..=14).rev() {
+                tmp -= self.err_buf2[i] * self.filter[i];
+            }
+            for i in (1..=14).rev() {
+                self.err_buf2[i] = self.err_buf2[i - 1];
+            }
+            tmp = clip16((tmp + 4096) >> shift);
+            self.err_buf2[1] = tmp;
+            self.vector_buf[a] = tmp;
+        }
+    }
+
+    /// Variante utilisee au tout debut d'un flux non repack : elle effectue un
+    /// 73e pas a entree nulle, ce qui decale la sortie d'un echantillon.
+    fn shift_sq_sub_comb_pulse(&mut self, shift: i32, inter_delay: bool) {
+        let mut out = [0i64; SUBFRAME_SIZE];
+        for a in 0..SUBFRAME_SIZE {
+            let mut tmp = self.vector_buf[a] * self.filter[0];
+            for i in (1..=14).rev() {
+                tmp -= self.err_buf2[i] * self.filter[i];
+            }
+            for i in (1..=14).rev() {
+                self.err_buf2[i] = self.err_buf2[i - 1];
+            }
+            tmp = (tmp + 4096) >> shift;
+            self.err_buf2[1] = tmp;
+            out[a] = clip16(tmp);
+        }
+
+        let mut tmp = 0i64;
+        for i in (1..=14).rev() {
+            tmp -= self.err_buf2[i] * self.filter[i];
+        }
+        for i in (1..=14).rev() {
+            self.err_buf2[i] = self.err_buf2[i - 1];
+        }
+        tmp = (tmp + 4096) >> shift;
+        self.err_buf2[1] = tmp;
+        let dernier = clip16(tmp);
+
+        if inter_delay {
+            self.vector_buf[..SUBFRAME_SIZE].copy_from_slice(&out);
+        } else {
+            for i in 0..SUBFRAME_SIZE - 1 {
+                self.vector_buf[i] = out[i + 1];
+            }
+            self.vector_buf[SUBFRAME_SIZE - 1] = dernier;
+        }
+    }
+
+    fn sync_shift_in_from_err(&mut self) {
+        self.history[SHIFT_IN_OFF] = self.err_buf2[0];
+        for i in 1..15 {
+            self.history[SHIFT_IN_OFF + i] = self.err_buf2[i];
+        }
+        for i in 15..SHIFT_IN_LEN {
+            self.history[SHIFT_IN_OFF + i] = 0;
+        }
+    }
+
+    fn sf_synthesis(&mut self, lpc_filter_0: i64, subframe_idx: usize) {
+        let size = SUBFRAME_SIZE;
+
+        let vsum_1 = {
+            let s: i64 = self.vector_buf[..size].iter().map(|v| v.abs()).sum();
+            s.min(0xFFFFF)
+        };
+
+        let normalize_bits = {
+            let mut val: i64 = 1;
+            for v in &self.vector_buf[..size] {
+                val |= v.abs();
+            }
+            let mut nb = 0i32;
+            while val <= 0x4000 {
+                val *= 2;
+                nb += 1;
+            }
+            nb
+        };
+
+        // Scale up
+        scale_vec(&mut self.vector_buf, normalize_bits - 3, size);
+        scale_vec_arr(&mut self.audio_buf, normalize_bits, 15);
+        scale_vec_arr(&mut self.err_buf1, normalize_bits, 15);
+
+        let v36 = self.err_buf1[1];
+
+        // shift_sq_add with BINARY_DECREASING
+        {
+            let tmp_buf = vec_mult(&self.filter, &BINARY_DECREASING);
+            let shift = 13 - self.shift_amount;
+            for a in 0..size {
+                self.audio_buf[0] = self.vector_buf[a];
+                let mut tmp: i64 = 0;
+                for i in (0..=14).rev() {
+                    tmp += self.audio_buf[i] * tmp_buf[i];
+                }
+                for i in (1..=14).rev() {
+                    self.audio_buf[i] = self.audio_buf[i - 1];
+                }
+                tmp = (tmp + 4096) >> shift;
+                self.vector_buf[a] = clip_sinc_pcm(tmp);
+            }
+        }
+
+        // shift_sq_sub with UNC_DECREASING
+        {
+            let tmp_buf = vec_mult(&self.filter, &UNC_DECREASING);
+            let shift = 13 - self.shift_amount;
+            for a in 0..size {
+                let mut tmp = self.vector_buf[a] * tmp_buf[0];
+                for i in (1..=14).rev() {
+                    tmp -= self.err_buf1[i] * tmp_buf[i];
+                }
+                for i in (1..=14).rev() {
+                    self.err_buf1[i] = self.err_buf1[i - 1];
+                }
+                tmp = (tmp + 4096) >> shift;
+                self.err_buf1[1] = clip_sinc_pcm(tmp);
+                self.vector_buf[a] = clip_sinc_pcm(tmp);
+            }
+        }
+
+        // Noise modulation LPC
+        let lf = {
+            let half = lpc_filter_0 >> 1;
+            if half >= 0 { 0 } else { half }
+        };
+
+        if size > 1 {
+            for i in (1..size).rev() {
+                let tmp = formula(self.vector_buf[i], lf, self.vector_buf[i - 1]);
+                self.vector_buf[i] = clip_sinc_pcm(tmp);
+            }
+        }
+        {
+            let tmp = formula(self.vector_buf[0], lf, v36);
+            self.vector_buf[0] = clip_sinc_pcm(tmp);
+        }
+
+        // Scale down
+        scale_vec(&mut self.vector_buf, -normalize_bits, size);
+        scale_vec_arr(&mut self.audio_buf, -normalize_bits, 15);
+        scale_vec_arr(&mut self.err_buf1, -normalize_bits, 15);
+
+        // Energy ratio and noise generation
+        let vsum_2: i64 = self.vector_buf[..size].iter().map(|v| v.abs()).sum();
+        let t = if vsum_2 >= 0x40 {
+            (vsum_1 << 11) / vsum_2
+        } else {
+            1
+        };
+
+        let bias = ((409 * t) >> 15) << 15;
+        let mut noise = [0i64; SUBFRAME_SIZE];
+        noise[0] = clip_sinc_pcm((bias + 32358 * self.noise_state) >> 15);
+        for i in 1..size {
+            noise[i] = clip_sinc_pcm((bias + 32358 * noise[i - 1]) >> 15);
+        }
+        self.noise_state = noise[size - 1];
+
+        for i in 0..size {
+            let tmp = (self.vector_buf[i] * noise[i]) >> 11;
+            // FFmpeg: repack (NCH) -> clip_work(=clip_sinc_pcm); else av_clip_int16.
+            self.working_buffer[subframe_idx][i] = if self.repack {
+                clip_sinc_pcm(tmp)
+            } else {
+                clip16(tmp)
+            };
+        }
+    }
+
+    fn update_state(&mut self, working_flat: &[i64]) -> Vec<i16> {
         for i in 0..6 {
             self.excitation[i] = self.excitation[288 + i];
         }
@@ -271,17 +613,18 @@ impl DssSpDecoder {
         let mut a = 0usize;
 
         while offset < self.excitation.len() {
-            let mut tmp: f64 = 0.0;
+            let mut tmp: i64 = 0;
             for i in 0..6 {
                 let idx = offset.wrapping_sub(i);
                 if idx < self.excitation.len() {
-                    tmp += self.excitation[idx] * SINC[a + i * 11];
+                    tmp += self.excitation[idx] * SINC[a + i * 11] as i64;
                 }
             }
             offset += 1;
-
-            let sample = (tmp * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
-            output.push(sample);
+            tmp >>= 15;
+            // FFmpeg: repack (NCH) -> clip_sinc_pcm; else av_clip_int16.
+            let s = if self.repack { clip_sinc_pcm(tmp) } else { clip16(tmp) };
+            output.push(s as i16);
 
             a = (a + 1) % 11;
             if a == 0 {
@@ -292,4 +635,58 @@ impl DssSpDecoder {
         output.truncate(OUTPUT_SAMPLES);
         output
     }
+}
+
+/// Scale fixed-size array values by shifting
+fn scale_vec(vec: &mut [i64; SUBFRAME_SIZE], bits: i32, size: usize) {
+    if bits < 0 {
+        let shift = (-bits) as u32;
+        for v in vec[..size].iter_mut() {
+            *v >>= shift;
+        }
+    } else if bits > 0 {
+        let shift = bits as u32;
+        for v in vec[..size].iter_mut() {
+            *v <<= shift;
+        }
+    }
+}
+
+fn scale_vec_arr(vec: &mut [i64; 15], bits: i32, size: usize) {
+    if bits < 0 {
+        let shift = (-bits) as u32;
+        for v in vec[..size].iter_mut() {
+            *v >>= shift;
+        }
+    } else if bits > 0 {
+        let shift = bits as u32;
+        for v in vec[..size].iter_mut() {
+            *v <<= shift;
+        }
+    }
+}
+
+fn vec_mult(src: &[i64; 15], mult: &[i32; 15]) -> [i64; 15] {
+    let mut dst = [0i64; 15];
+    dst[0] = src[0];
+    for i in 1..15 {
+        dst[i] = (src[i] * mult[i] as i64 + 0x4000) >> 15;
+    }
+    dst
+}
+
+/// Post-filtre applique apres la synthese LPC, avec saturation collante :
+/// l'etat porte est remis a +/-32767 des que la sortie deborde de l'int16.
+fn apply_post_lpc(vector: &mut [i64; SUBFRAME_SIZE], mut etat: i64) -> i64 {
+    for v in vector.iter_mut() {
+        let tmp = etat * 0x1fff + (*v << 15) + 0x4000;
+        let out = tmp >> 15;
+        *v = out;
+        let hi = out & -32768;
+        if hi != 0 && hi != -32768 {
+            etat = if out > 0 { 32767 } else { -32767 };
+            *v = etat;
+        }
+    }
+    etat
 }

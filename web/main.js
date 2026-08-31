@@ -9,8 +9,10 @@ const out = document.getElementById("out");
 const FRIENDLY = {
   grundig_sp: "Grundig DSS-SP",
   ds2_qp: "Olympus DS2 (Quality Play)",
+  ds2_qp7: "Olympus DS2 (Quality Play, mode 7)",
   ds2_sp: "Olympus DS2 (Standard Play)",
   dss_sp: "Olympus DSS-SP",
+  dss_lp: "Olympus DSS-LP (G.723.1)",
 };
 
 drop.addEventListener("click", () => fileInput.click());
@@ -64,7 +66,25 @@ async function handleFile(file) {
         <div><a class="btn" href="${url}" download="${esc(dlName)}">Download WAV</a></div>
       </div>`);
   } catch (err) {
-    show(`<div class="card err">Decode failed: ${esc(String((err && err.message) || err))}</div>`);
+    const msg = String((err && err.message) || err);
+    // DSS LP carries G.723.1 frames, not the SP codec. It is a published
+    // standard that ffmpeg decodes, but shipping a second codec into the
+    // browser is not worth it — so say what the file is and where to go.
+    if (/G\.723\.1/i.test(msg)) {
+      return show(`
+        <div class="card err">
+          <b>This is a DSS-LP file.</b> Its audio is
+          <a href="https://en.wikipedia.org/wiki/G.723.1" target="_blank" rel="noopener">G.723.1</a>,
+          not the DSS-SP codec this page decodes — older recorders such as the
+          Olympus DS-4000 wrote it.
+          <p>G.723.1 is a published standard, so nothing is locked here: any
+          recent <code>ffmpeg</code> will decode it.</p>
+          <p><code>ffmpeg -i your-file.dss out.wav</code></p>
+          <p class="muted">This page stays a single-codec decoder on purpose —
+          it is the part nobody else could read.</p>
+        </div>`);
+    }
+    show(`<div class="card err">Decode failed: ${esc(msg)}</div>`);
   }
 }
 
