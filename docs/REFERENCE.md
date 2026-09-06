@@ -14,7 +14,7 @@
 - [Where it stands now](#where-it-stands-now) — giving it back to FFmpeg & preservation
 - [Real-world numbers](#real-world-numbers)
 - [What's in this repo](#whats-in-this-repo)
-- [Credits](#credits--proper-order) · [License](#license)
+- [Credits](#credits--proper-order) · [License](../README.md#license)
 
 ## Pick your way in
 
