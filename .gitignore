@@ -61,3 +61,9 @@ src/etc/audio-cron.conf
 
 # Briefs de travail internes : notes de session, chemins locaux, rien de publiable.
 BRIEF-*.md
+
+# Shared tool settings are versioned; per-machine ones (settings.local.json) are not
+!.claude/
+.claude/*
+!.claude/settings.json
+!.claude/CLAUDE.md
