@@ -11,7 +11,7 @@ jobs:
     name: Lint everything
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install shellcheck
         run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
@@ -25,7 +25,7 @@ jobs:
           # The CLI wrapper uses arrays + nested heredocs ; shellcheck is overly strict on those, so we run it with a few exclusions
           shellcheck --exclude=SC2068,SC2086 src/bin/conv-dss-ds2-to-mp3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 18
 
@@ -44,11 +44,11 @@ jobs:
     name: Docker image builds
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build (no push)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
