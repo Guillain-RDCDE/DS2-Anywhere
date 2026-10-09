@@ -1,5 +1,13 @@
 # DS2-Anywhere
 
+<!-- opening -->
+> Doctors, lawyers and police dictate into small recorders whose file format was kept secret for thirty years. This opens it on any computer, in your browser if you like.
+>
+> Olympus DS2/DSS and Grundig DSS decoded natively on Linux and in the browser through WebAssembly, encrypted files included; the decoder is going upstream into FFmpeg.
+>
+> A paid licence and a chain of Windows machines replaced by open code, and the fix given back to everyone. Part of the work of [Guillain d’Erceville](https://github.com/Guillain-RDCDE), forward deployed engineer.
+<!-- opening -->
+
 ![DS2-Anywhere — decode Olympus DSS / DS2 dictation files on Linux, pure CLI, no GUI](docs/assets/social-preview.png)
 
 > Open the dictation formats that stayed locked for thirty years — Olympus **DS2/DSS**
