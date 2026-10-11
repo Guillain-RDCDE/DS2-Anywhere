@@ -1,5 +1,5 @@
 # Multi-stage build:
-#  1. compile dss-decode-native from the upstream Rust crate
+#  1. compile dss-decode-native from the vendored Rust crate (vendor/dss-codec)
 #  2. assemble the runtime image (slim Debian + node + ffmpeg + the binary + our scripts)
 #
 # Usage:
@@ -9,29 +9,21 @@
 # Then the HTTP daemon is reachable at http://localhost:8765 .
 
 # ============================================================
-# Stage 1 — build the native decoder from upstream
+# Stage 1 — build the native decoder from vendor/dss-codec
 # ============================================================
 FROM rust:1-bookworm AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /src
 
-# Pinned to a known-good commit of the codec fork, fetched by SHA, for a
-# reproducible build. This commit was shadow-benched against 316 real DSS/DS2
-# recordings (0 garbling, no panics) — see docs/15-the-relay-runs-backward.md.
-# A floating `--depth=1` of the default branch would let a future upstream
-# regression reach this image silently on the next build; that is exactly the
-# class of bug docs/15 is about. Bump this on purpose, and re-run the bench.
-ARG DSS_CODEC_REV=e16b71c5abdf47e1f6ea2bae3f4428d69afdab31
-RUN git init -q . && \
-    git remote add origin https://github.com/gaspardpetit/dss-codec.git && \
-    git fetch -q --depth=1 origin "${DSS_CODEC_REV}" && \
-    git checkout -q FETCH_HEAD && \
-    cd dss-codec && \
-    cargo build --release && \
+# The same crate the in-browser decoder (web/, built by pages.yml) is compiled
+# from, so the native CLI and the web page decode identically: CI decodes the
+# sample files both ways and compares the PCM sample for sample. Changing the
+# codec means changing vendor/ on purpose, in a reviewed commit, with the bench
+# re-run (see docs/15-the-relay-runs-backward.md for why the codec is never
+# taken from a floating upstream branch). --locked keeps Cargo.lock authoritative.
+COPY vendor/dss-codec/ ./dss-codec/
+RUN cd dss-codec && \
+    cargo build --release --locked && \
     cp target/release/dss-decode /tmp/dss-decode-native
 
 # ============================================================

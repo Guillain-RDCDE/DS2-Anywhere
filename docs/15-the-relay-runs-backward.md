@@ -113,6 +113,12 @@ by SHA. It's a one-line discipline with a real payoff: the public image is repro
 the codec only moves when someone bumps the pin *and re-runs the bench* — on purpose, never
 overnight. An open relay still needs a latch on the door you ship through.
 
+> **Update, October 2026.** The pin has since been replaced by something stricter: the
+> Dockerfile now builds the native decoder from [`vendor/dss-codec`](../vendor/dss-codec/), the
+> same in-tree crate the browser decoder is compiled from, and CI decodes the sample files with
+> both and compares the samples. The codec still only moves on purpose, in a reviewed commit to
+> `vendor/`, and the native and web decoders can no longer drift apart.
+
 ## What to take away
 
 - **Shadow-bench upstream before you adopt it — even from someone you trust; especially the

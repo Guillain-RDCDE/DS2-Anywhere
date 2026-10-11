@@ -199,7 +199,7 @@ The intellectual heavy-lifting belongs to the people who opened the locks:
 
 - **Oleksij Rempel** — `libavcodec/dss_sp.c` in FFmpeg, **2014**. The first open DSS SP decoder, and the only one for twelve years. The bug we found in that corner was in the demuxer around it, not in his codec.
 - **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that started all of it. MIT, February 2026.
-- **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) + [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (the Rust crate our Dockerfile uses). MIT.
+- **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) + [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (streaming decode and decryption, since merged upstream). MIT.
 - **Patrick Domack** — the [FFmpeg C port](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) of the spec. MIT / public domain.
 - **JulsRX** — the Grundig Digta owner who reported the file nobody could decode, and supplied the public sample that made cracking the Grundig codec possible.
 - **lamejs** (LGPL) and **[FFmpeg](https://ffmpeg.org/)** (LGPL) — the MP3 encoders.

@@ -34,7 +34,7 @@ foundation somebody else laid and maintained for free.
 
 The WASM build of the codec (`dss-codec-wasm`), the npm packaging, the JavaScript bindings, the streaming decoder API, the wasm-bindgen wrapper. MIT licensed. This is what made the codec usable from any JS/TS project (Node, browser, edge worker) without needing a Rust toolchain.
 
-Gaspard also maintains a [fork of Hirpara's Rust crate](https://github.com/gaspardpetit/dss-codec) with CI workflows, streaming decode, and 128/256-bit decryption support — that's the source our Dockerfile clones to build the native `dss-decode` binary. The fork sits between Hirpara's upstream spec and our production runtime; without it, we'd be building from raw upstream + carrying our own patches.
+Gaspard also maintains a [fork of Hirpara's Rust crate](https://github.com/gaspardpetit/dss-codec) with CI workflows, streaming decode, and 128/256-bit decryption support. That work has since been merged into Hirpara's upstream, and our native `dss-decode` binary (Dockerfile) and the in-browser decoder are now both built from the same vendored crate, [`vendor/dss-codec`](vendor/dss-codec/) — a copy of [our fork](https://github.com/Guillain-RDCDE/dss-codec) of Hirpara's upstream, which carries Gaspard's work plus our DSS fixes.
 
 The WASM build was our first integration target. We later switched to the native binary for performance reasons (see [docs/04-wasm-vs-native.md](docs/04-wasm-vs-native.md)), but the WASM is what got us off the ground in a few hours, and it's the chain we kept as a documented fallback.
 

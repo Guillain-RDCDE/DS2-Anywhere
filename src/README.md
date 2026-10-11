@@ -66,8 +66,8 @@ Detailed in [docs/02-integration.md](../docs/02-integration.md). Short version:
 apt install nodejs ffmpeg mariadb-client
 
 # 2. Install the native binary
-#    Either:  cargo build --release in https://github.com/gaspardpetit/dss-codec
-#    Or:      download from the project's GitHub Releases
+#    cargo build --release --locked in vendor/dss-codec (the crate the web decoder uses too)
+#    -> target/release/dss-decode
 cp dss-decode /usr/local/bin/dss-decode-native
 chmod +x /usr/local/bin/dss-decode-native
 

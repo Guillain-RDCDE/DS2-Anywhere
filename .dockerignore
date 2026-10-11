@@ -1,0 +1,5 @@
+# Keep the build context small: the Dockerfile only needs src/ and vendor/dss-codec/.
+.git
+**/target
+web/pkg
+docs
