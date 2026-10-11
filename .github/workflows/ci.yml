@@ -6,10 +6,23 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # One toolchain for every Rust gate, so fmt and clippy verdicts don't drift.
+  RUST_TOOLCHAIN: "1.99.0"
+  WASM_BINDGEN: "0.2.118"   # must match the wasm-bindgen crate in Cargo.lock
+
 jobs:
   lint:
     name: Lint everything
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -27,22 +40,51 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 18
+          node-version: 22
 
       - name: node --check on ESM modules
         run: |
           node --check src/lib/core.mjs
           node --check src/lib/core-wasm.mjs
           node --check src/bin/http_server.mjs
+          node --check scripts/codec-parity.mjs
 
       - name: php -l (PHP 5.6 compatibility check, runs in Docker)
         run: |
           docker run --rm -v "$PWD:/app" -w /app php:5.6-cli \
             php -l src/web/convertisseur.php
 
-  docker-build:
-    name: Docker image builds
+  rust:
+    name: Rust (vendored codec crates)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [vendor/dss-codec, vendor/dss-codec-wasm]
+    defaults:
+      run:
+        working-directory: ${{ matrix.crate }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - name: cargo fmt --check
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --locked
+
+  docker-build:
+    name: Docker image builds, and decodes like the web page
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Set up Docker Buildx
@@ -52,4 +94,38 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: ds2-anywhere:ci
+
+      # The native decoder inside the image and the wasm module the web page
+      # serves are built from the same vendor/ crate: prove they agree.
+      - name: Extract the image's native decoder
+        run: |
+          id=$(docker create ds2-anywhere:ci)
+          docker cp "$id:/usr/local/bin/dss-decode-native" ./dss-decode-native
+          docker rm "$id"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vendor/dss-codec-wasm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN }}
+      - name: Build the wasm module exactly as pages.yml does
+        run: |
+          cargo build --manifest-path vendor/dss-codec-wasm/Cargo.toml --target wasm32-unknown-unknown --release --locked
+          wasm-bindgen --target web --out-dir web/pkg --out-name dss_codec_wasm \
+            vendor/dss-codec-wasm/target/wasm32-unknown-unknown/release/dss_codec_wasm.wasm
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Native and wasm decoders produce identical samples
+        run: |
+          node scripts/codec-parity.mjs ./dss-decode-native web/pkg \
+            ffmpeg-upstream/fate/sample-qp.ds2 \
+            ffmpeg-upstream/fate/paused-qp.ds2 \
+            ffmpeg-upstream/fate/sample-dss-sp-paused.dss \
+            vendor/dss-codec/tests/fixtures/grundig_sample.dss

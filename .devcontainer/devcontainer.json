@@ -3,7 +3,7 @@
   "image": "mcr.microsoft.com/devcontainers/base:debian-12",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "18"
+      "version": "22"
     },
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "stable"

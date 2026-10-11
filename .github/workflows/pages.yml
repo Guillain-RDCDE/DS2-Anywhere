@@ -1,38 +1,44 @@
 name: pages
 
+# Deploys the current main only. (No `release:` trigger: a release event runs
+# on the release's tag, and would redeploy whatever web/ looked like back then.)
 on:
   push:
     branches: [main]
     paths: ['web/**', 'vendor/**', '.github/workflows/pages.yml']
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  # Same toolchain and wasm-bindgen as the CI parity check (ci.yml).
+  RUST_TOOLCHAIN: "1.99.0"
+  WASM_BINDGEN: "0.2.118"   # must match the wasm-bindgen crate in Cargo.lock
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: vendor/dss-codec-wasm
-      - name: Install wasm-bindgen-cli (must match the crate version)
-        run: cargo install wasm-bindgen-cli --version 0.2.118 --locked || cargo install wasm-bindgen-cli --version 0.2.118
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN }}
       - name: Build wasm
         run: |
-          cargo build --manifest-path vendor/dss-codec-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          cargo build --manifest-path vendor/dss-codec-wasm/Cargo.toml --target wasm32-unknown-unknown --release --locked
           wasm-bindgen --target web --out-dir web/pkg --out-name dss_codec_wasm \
             vendor/dss-codec-wasm/target/wasm32-unknown-unknown/release/dss_codec_wasm.wasm
       - run: touch web/.nojekyll
@@ -44,6 +50,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

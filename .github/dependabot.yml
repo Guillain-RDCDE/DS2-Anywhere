@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # The vendored codec crates. A bump here changes what both the Docker image
+  # and the web page decode with; CI's native/wasm parity check runs on the PR.
+  - package-ecosystem: cargo
+    directories:
+      - /vendor/dss-codec
+      - /vendor/dss-codec-wasm
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
