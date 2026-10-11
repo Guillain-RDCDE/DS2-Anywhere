@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "Native DSS/DS2 audio decoder (Olympus Digital Speech Standard)"
 license = "MIT"
-homepage = "https://github.com/gaspardpetit/dss-codec"
-repository = "https://github.com/gaspardpetit/dss-codec"
-documentation = "https://github.com/gaspardpetit/dss-codec#readme"
 
 [[bin]]
 name = "dss-decode"
@@ -22,3 +19,19 @@ sha2 = "0.10"
 
 [dev-dependencies]
 approx = "0.5"
+
+# This crate is a copy of the codec fork (see ../README.md) and its output is
+# pinned bit for bit by tests. These lints ask for rewrites of the DSP and
+# demux code itself (index loops that mirror the reference decoder, slice
+# copies, enum layout, signatures); such rewrites belong upstream, where they
+# can be checked against the reference, not in a vendored copy. Every other
+# clippy lint is enforced with -D warnings in CI.
+[lints.clippy]
+needless_range_loop = "allow"
+manual_memcpy = "allow"
+chunks_exact_to_as_chunks = "allow"
+collapsible_match = "allow"
+large_enum_variant = "allow"
+manual_is_multiple_of = "allow"
+ptr_arg = "allow"
+empty_line_after_doc_comments = "allow"

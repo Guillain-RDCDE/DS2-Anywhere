@@ -207,8 +207,9 @@ impl StreamingDecoder {
             }
             AudioFormat::GrundigSp => {
                 let header_blocks = self.prebuffer[0];
-                self.demuxer =
-                    Some(ActiveDemuxer::Grundig(GrundigSpStreamDemuxer::new(header_blocks)));
+                self.demuxer = Some(ActiveDemuxer::Grundig(GrundigSpStreamDemuxer::new(
+                    header_blocks,
+                )));
                 self.decoder = Some(ActiveDecoder::Grundig(GrundigSpDecoder::new()));
             }
             AudioFormat::DssLp => {
@@ -451,8 +452,12 @@ impl Default for StreamingDecoder {
 }
 
 fn is_plain_prefix(bytes: &[u8]) -> bool {
-    matches!(bytes.get(..4), Some(b"\x03ds2") | Some(b"\x01ds2") | Some(b"\x07ds2"))
-        || (bytes.len() >= 4 && bytes[1..4] == *b"dss" && (bytes[0] == 2 || bytes[0] == 3 || bytes[0] == 6))
+    matches!(
+        bytes.get(..4),
+        Some(b"\x03ds2") | Some(b"\x01ds2") | Some(b"\x07ds2")
+    ) || (bytes.len() >= 4
+        && bytes[1..4] == *b"dss"
+        && (bytes[0] == 2 || bytes[0] == 3 || bytes[0] == 6))
 }
 
 #[cfg(test)]

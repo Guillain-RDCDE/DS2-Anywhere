@@ -13,6 +13,12 @@
 !ffmpeg-upstream/fate/*.ds2
 !ffmpeg-upstream/fate/*.DS2
 
+# ...and for the small public samples the vendored codec's tests decode
+# (copies of the FATE samples above, plus the Grundig fixture and its reference).
+!ffmpeg-upstream/fate/*.dss
+!vendor/test_files/*
+!vendor/dss-codec/tests/fixtures/*
+
 # Node
 node_modules/
 npm-debug.log*

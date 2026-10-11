@@ -72,11 +72,7 @@ pub fn decode_combined_pitch(
 }
 
 /// Normalized lattice synthesis filter matching DssDecoder.dll FUN_10019d40.
-pub fn lattice_synthesis(
-    excitation: &[f64],
-    coeffs: &[f64],
-    state: &mut [f64],
-) -> Vec<f64> {
+pub fn lattice_synthesis(excitation: &[f64], coeffs: &[f64], state: &mut [f64]) -> Vec<f64> {
     let p = coeffs.len();
     let mut output = vec![0.0; excitation.len()];
 

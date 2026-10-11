@@ -68,8 +68,7 @@ pub fn demux_dss(data: &[u8]) -> Result<(Vec<Vec<u8>>, usize)> {
     // Byte 0 is the header size in 512-byte blocks. Two and three are what the
     // common recorders write, but others use a larger header, and refusing them
     // sent the file down the DS2 path where it failed with a misleading message.
-    let entete_valide =
-        data.len() >= 4 && data[1..4] == *b"dss" && data[0] > 0 && data[0] <= 32;
+    let entete_valide = data.len() >= 4 && data[1..4] == *b"dss" && data[0] > 0 && data[0] <= 32;
     let sans_entete = !entete_valide && looks_like_headerless_dss(data);
     if !entete_valide && !sans_entete {
         return Err(DecodeError::NotDss(std::path::PathBuf::from("<bytes>")));
@@ -257,7 +256,11 @@ impl DssSpStreamDemuxer {
             self.stream_pos = debut.min(self.stream_buf.len() + self.stream_pos);
             self.swap = sw;
             for _ in 0..fc {
-                let taille = if self.swap != 0 { 40 } else { DSS_SP_FRAME_SIZE };
+                let taille = if self.swap != 0 {
+                    40
+                } else {
+                    DSS_SP_FRAME_SIZE
+                };
                 frames.push(self.extract_packet_padded(taille));
             }
             self.compact_stream();
@@ -307,7 +310,11 @@ impl DssSpStreamDemuxer {
             self.stream_pos = debut;
             self.swap = sw;
             for _ in 0..fc {
-                let taille = if self.swap != 0 { 40 } else { DSS_SP_FRAME_SIZE };
+                let taille = if self.swap != 0 {
+                    40
+                } else {
+                    DSS_SP_FRAME_SIZE
+                };
                 frames.push(self.extract_packet(taille));
             }
             self.en_attente.pop_front();

@@ -1,5 +1,5 @@
-pub mod wav;
 pub mod resample;
+pub mod wav;
 
 /// Output configuration
 #[derive(Debug, Clone)]

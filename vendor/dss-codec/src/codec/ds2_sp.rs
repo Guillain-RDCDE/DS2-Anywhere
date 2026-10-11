@@ -5,8 +5,8 @@
 
 use crate::bitstream::BitstreamReader;
 use crate::codec::common::{decode_combinatorial_index, decode_combined_pitch, lattice_synthesis};
-use crate::tables::ds2_sp::sp_codebook_lookup;
 use crate::tables::ds2_quant::{SP_EXCITATION_GAIN, SP_PITCH_GAIN, SP_PULSE_AMP};
+use crate::tables::ds2_sp::sp_codebook_lookup;
 
 const NUM_COEFFS: usize = 14;
 const NUM_SUBFRAMES: usize = 4;
@@ -109,8 +109,7 @@ impl Ds2SpDecoder {
 
             // Fixed codebook excitation
             let gc = SP_EXCITATION_GAIN[*gain_idx];
-            let positions =
-                decode_combinatorial_index(*cb_idx, SUBFRAME_SIZE, EXCITATION_PULSES);
+            let positions = decode_combinatorial_index(*cb_idx, SUBFRAME_SIZE, EXCITATION_PULSES);
             let mut fixed_exc = [0.0f64; SUBFRAME_SIZE];
             for (pi, &pos) in positions.iter().enumerate() {
                 if pos < SUBFRAME_SIZE {

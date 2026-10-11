@@ -22,8 +22,7 @@ impl<'a> BitstreamReader<'a> {
     fn load_next_word(&mut self) {
         let offset = self.word_index * 2;
         if offset + 1 < self.data.len() {
-            self.current_word =
-                self.data[offset] as u16 | ((self.data[offset + 1] as u16) << 8);
+            self.current_word = self.data[offset] as u16 | ((self.data[offset + 1] as u16) << 8);
         } else {
             self.current_word = 0;
         }

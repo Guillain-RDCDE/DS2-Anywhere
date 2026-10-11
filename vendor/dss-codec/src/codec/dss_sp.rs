@@ -378,8 +378,7 @@ impl DssSpDecoder {
                     let coeff_1 = self.filter[i];
                     let coeff_2 = self.filter[a_plus - i];
                     self.filter[i] = clip16(formula(coeff_1, self.lpc_filter[a], coeff_2));
-                    self.filter[a_plus - i] =
-                        clip16(formula(coeff_2, self.lpc_filter[a], coeff_1));
+                    self.filter[a_plus - i] = clip16(formula(coeff_2, self.lpc_filter[a], coeff_1));
                 }
             }
         }
@@ -406,8 +405,7 @@ impl DssSpDecoder {
         for i in 0..7 {
             let pos = sf.pulse_pos[i];
             let val =
-                (FIXED_CB_GAIN[sf.gain] as i64 * PULSE_VAL[sf.pulse_val[i]] as i64 + 0x4000)
-                    >> 15;
+                (FIXED_CB_GAIN[sf.gain] as i64 * PULSE_VAL[sf.pulse_val[i]] as i64 + 0x4000) >> 15;
             self.vector_buf[pos] += val;
         }
     }
@@ -554,7 +552,11 @@ impl DssSpDecoder {
         // Noise modulation LPC
         let lf = {
             let half = lpc_filter_0 >> 1;
-            if half >= 0 { 0 } else { half }
+            if half >= 0 {
+                0
+            } else {
+                half
+            }
         };
 
         if size > 1 {
@@ -623,7 +625,11 @@ impl DssSpDecoder {
             offset += 1;
             tmp >>= 15;
             // FFmpeg: repack (NCH) -> clip_sinc_pcm; else av_clip_int16.
-            let s = if self.repack { clip_sinc_pcm(tmp) } else { clip16(tmp) };
+            let s = if self.repack {
+                clip_sinc_pcm(tmp)
+            } else {
+                clip16(tmp)
+            };
             output.push(s as i16);
 
             a = (a + 1) % 11;

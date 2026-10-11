@@ -484,13 +484,16 @@ impl Ds2QpStreamDemuxer {
             DemuxedDs2::QpSegments {
                 segments,
                 total_frames: _,
-            } => Ok(segments.into_iter().flat_map(|seg| {
-                seg.stream
-                    .chunks(DS2_QP_FRAME_SIZE)
-                    .take(seg.total_frames)
-                    .map(|chunk| chunk.to_vec())
-                    .collect::<Vec<_>>()
-            }).collect()),
+            } => Ok(segments
+                .into_iter()
+                .flat_map(|seg| {
+                    seg.stream
+                        .chunks(DS2_QP_FRAME_SIZE)
+                        .take(seg.total_frames)
+                        .map(|chunk| chunk.to_vec())
+                        .collect::<Vec<_>>()
+                })
+                .collect()),
             DemuxedDs2::Qp7Segments {
                 segments,
                 total_frames: _,

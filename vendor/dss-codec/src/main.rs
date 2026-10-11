@@ -93,7 +93,11 @@ fn main() {
         if !cli.quiet {
             eprintln!(
                 "{}: {}",
-                if cli.decrypt { "Decrypting" } else { "Decoding" },
+                if cli.decrypt {
+                    "Decrypting"
+                } else {
+                    "Decoding"
+                },
                 input_path.display()
             );
         }
@@ -152,7 +156,11 @@ fn resolve_password(cli_password: Option<&str>) -> Option<Vec<u8>> {
     cli_password
         .map(str::as_bytes)
         .map(|bytes| bytes.to_vec())
-        .or_else(|| env::var("DSS_CODEC_PASSWORD").ok().map(|value| value.into_bytes()))
+        .or_else(|| {
+            env::var("DSS_CODEC_PASSWORD")
+                .ok()
+                .map(|value| value.into_bytes())
+        })
 }
 
 fn make_output_path(input: &PathBuf, output_dir: Option<&std::path::Path>, ext: &str) -> PathBuf {
@@ -167,7 +175,10 @@ fn make_output_path(input: &PathBuf, output_dir: Option<&std::path::Path>, ext: 
 
 fn make_decrypt_output_path(input: &PathBuf, output_dir: Option<&std::path::Path>) -> PathBuf {
     let stem = input.file_stem().unwrap_or_default();
-    let ext = input.extension().and_then(|ext| ext.to_str()).unwrap_or("bin");
+    let ext = input
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("bin");
     let filename = format!("{}.decrypted.{}", stem.to_string_lossy(), ext);
     if let Some(dir) = output_dir {
         dir.join(filename)
@@ -220,7 +231,10 @@ mod tests {
         unsafe {
             env::set_var("DSS_CODEC_PASSWORD", "env-secret");
         }
-        assert_eq!(resolve_password(Some("cli-secret")), Some(b"cli-secret".to_vec()));
+        assert_eq!(
+            resolve_password(Some("cli-secret")),
+            Some(b"cli-secret".to_vec())
+        );
         unsafe {
             env::remove_var("DSS_CODEC_PASSWORD");
         }

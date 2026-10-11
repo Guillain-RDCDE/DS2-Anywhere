@@ -1,11 +1,7 @@
 use crate::error::{DecodeError, Result};
 
 /// Resample mono f64 audio from one sample rate to another using rubato.
-pub fn resample(
-    samples: &[f64],
-    from_rate: u32,
-    to_rate: u32,
-) -> Result<Vec<f64>> {
+pub fn resample(samples: &[f64], from_rate: u32, to_rate: u32) -> Result<Vec<f64>> {
     if from_rate == to_rate {
         return Ok(samples.to_vec());
     }
@@ -44,8 +40,7 @@ pub fn resample(
     }
 
     // Trim to expected length
-    let expected_len =
-        (samples.len() as f64 * to_rate as f64 / from_rate as f64).round() as usize;
+    let expected_len = (samples.len() as f64 * to_rate as f64 / from_rate as f64).round() as usize;
     output.truncate(expected_len);
 
     Ok(output)

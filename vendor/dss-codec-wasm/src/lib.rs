@@ -1,6 +1,8 @@
 use dss_codec_core::crypto::ds2_encrypted::ENCRYPTED_MAGIC;
 use dss_codec_core::streaming::DecryptingDecoderStreamer;
-use dss_codec_core::{decode_to_buffer, decode_to_buffer_with_password, decrypt_to_bytes, inspect_bytes};
+use dss_codec_core::{
+    decode_to_buffer, decode_to_buffer_with_password, decrypt_to_bytes, inspect_bytes,
+};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -174,10 +176,7 @@ pub fn decode_wasm(data: &[u8]) -> Result<DecodeResult, JsValue> {
 }
 
 #[wasm_bindgen(js_name = decodeWithPassword)]
-pub fn decode_with_password_wasm(
-    data: &[u8],
-    password: &[u8],
-) -> Result<DecodeResult, JsValue> {
+pub fn decode_with_password_wasm(data: &[u8], password: &[u8]) -> Result<DecodeResult, JsValue> {
     decode_to_buffer_with_password(data, Some(password))
         .map(to_wasm_decode_result)
         .map_err(to_js_error)

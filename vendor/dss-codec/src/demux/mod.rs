@@ -1,5 +1,5 @@
-pub mod dss;
 pub mod ds2;
+pub mod dss;
 pub mod grundig;
 
 use crate::demux::ds2::{detect_ds2_audio_start, detect_ds2_format_type};

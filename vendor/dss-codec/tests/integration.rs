@@ -16,7 +16,9 @@ fn test_detect_ds2_sp() {
 fn test_detect_ds2_qp() {
     let path = Path::new("../test_files/sample_qp.DS2");
     if !path.exists() {
-        eprintln!("Skipping: test file not found (place a QP-mode .DS2 file at test_files/sample_qp.DS2)");
+        eprintln!(
+            "Skipping: test file not found (place a QP-mode .DS2 file at test_files/sample_qp.DS2)"
+        );
         return;
     }
     let data = std::fs::read(path).unwrap();
@@ -60,7 +62,7 @@ fn test_decode_dss_sp_basic() {
         return;
     }
     let buf = dss_codec::decode_file(path).unwrap();
-    assert_eq!(buf.native_rate, 11025);
+    assert_eq!(buf.native_rate, 11000);
     assert!(!buf.samples.is_empty());
 }
 

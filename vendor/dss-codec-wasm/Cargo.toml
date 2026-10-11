@@ -13,3 +13,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 dss-codec-core = { package = "dss-codec", path = "../dss-codec" }
 wasm-bindgen = "0.2"
+
+# StreamDecoder is constructed from JavaScript through `new` (wasm-bindgen
+# constructor); a Rust `Default` impl would add API surface nobody calls.
+[lints.clippy]
+new_without_default = "allow"

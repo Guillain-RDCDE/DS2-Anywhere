@@ -53,7 +53,7 @@ pub enum EncryptionInfo {
 
 /// Normalize a DSS/DS2 file to plain container bytes.
 ///
-/// Plain DSS/DS2 input is returned unchanged. 
+/// Plain DSS/DS2 input is returned unchanged.
 /// Encrypted DS2 input is decrypted to plain DS2
 pub fn decrypt_file(path: &Path, password: Option<&[u8]>) -> Result<Vec<u8>> {
     let data = std::fs::read(path)?;
@@ -163,11 +163,7 @@ pub fn decode_to_buffer_with_password(data: &[u8], password: Option<&[u8]>) -> R
 }
 
 /// Decode a file and write to WAV with given output configuration.
-pub fn decode_and_write(
-    input: &Path, 
-    output: &Path, 
-    config: &OutputConfig,
-) -> Result<AudioBuffer> {
+pub fn decode_and_write(input: &Path, output: &Path, config: &OutputConfig) -> Result<AudioBuffer> {
     decode_and_write_with_password(input, output, config, None)
 }
 
