@@ -10,6 +10,9 @@ updates:
 
   # The vendored codec crates. A bump here changes what both the Docker image
   # and the web page decode with; CI's native/wasm parity check runs on the PR.
+  # Patch releases only: bigger moves (an API change in rubato, sha1/sha2...)
+  # belong upstream in the codec first. wasm-bindgen is left out because it must
+  # move together with the wasm-bindgen CLI pinned in ci.yml and pages.yml.
   - package-ecosystem: cargo
     directories:
       - /vendor/dss-codec
@@ -19,3 +22,7 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: wasm-bindgen
