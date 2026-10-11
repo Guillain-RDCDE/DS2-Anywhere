@@ -1,0 +1,66 @@
+DS2-Anywhere
+Copyright (c) 2026 Guillain d'Erceville
+
+Unless a file or directory below says otherwise, this repository is released
+under the MIT License (see LICENSE). This notice lists what is NOT ours, or
+not MIT, and the licence each part is under. Credits in prose: CREDITS.md.
+
+
+Third-party code redistributed in this repository
+-------------------------------------------------
+
+vendor/dss-codec/
+  The Rust DSS/DS2 decoder crate (also the source of the native `dss-decode`
+  binary built by the Dockerfile, and of the in-browser decoder in web/).
+  A copy of https://github.com/Guillain-RDCDE/dss-codec, a fork of
+  https://github.com/hirparak/dss-codec (Kieran Hirpara, with contributions
+  from Gaspard Petit, Patrick Domack and others).
+  License: MIT, Copyright (c) 2026 Kieran Hirpara - vendor/dss-codec/LICENSE
+
+vendor/dss-codec-wasm/
+  The wasm-bindgen wrapper around the crate above. Adapted from
+  https://github.com/gaspardpetit/dss-codec-wasm (Gaspard Petit): the
+  dependency points at ../dss-codec, and the format list also covers DSS LP.
+  License: MIT, Copyright (c) 2026 Gaspard Petit - vendor/dss-codec-wasm/LICENSE
+
+ffmpeg-upstream/
+  Patches and files prepared for submission to FFmpeg
+  (https://ffmpeg.org/), whose libraries are licensed under the GNU Lesser
+  General Public License version 2.1 or later (LGPL-2.1-or-later).
+  - The patches that modify existing FFmpeg sources (libavcodec/dss_sp.c,
+    libavformat/dss.c, the codec and format registries, the FATE tests) are
+    derivative works of FFmpeg and are licensed under LGPL-2.1-or-later, not
+    MIT.
+  - patches/dss_sp_lattice.c is derived from FFmpeg's libavcodec/dss_sp.c
+    (Copyright (C) 2014 Oleksij Rempel) and keeps its LGPL-2.1-or-later header.
+  - patches/avcodec-grundig_sp-decoder.patch adds files carrying an
+    LGPL-2.1-or-later header, as FFmpeg requires.
+  - The DS2 decoder and demuxer in the v2/v3 DS2 patches were written by
+    Patrick Domack, who released them under MIT / public-domain terms
+    (https://github.com/hirparak/dss-codec/issues/1); they are submitted to
+    FFmpeg for inclusion under FFmpeg's licence.
+
+Sample audio files
+------------------
+
+ffmpeg-upstream/fate/*.ds2, *.dss, and their copies in vendor/test_files/
+  Short public test recordings used as regression fixtures (provenance in
+  examples/README.md and ffmpeg-upstream/). They are not client recordings.
+
+vendor/dss-codec/tests/fixtures/
+  A public Grundig DSS-SP sample and the reference WAV produced from it by the
+  genuine Grundig decoder, used to check that ours is bit-exact. Copied from
+  the dss-codec fork above.
+
+
+Software used but not redistributed here
+----------------------------------------
+
+These are installed separately (by the Dockerfile, a package manager or npm);
+their own licences apply to them:
+
+  FFmpeg / libmp3lame (native chain)   LGPL-2.1-or-later / GPL-2.0-or-later,
+                                       depending on the build
+  lamejs (optional WASM chain)         LGPL-3.0
+  jszip (optional browser app)         MIT or GPL-3.0-or-later (dual)
+  Node.js, Debian packages             their respective licences

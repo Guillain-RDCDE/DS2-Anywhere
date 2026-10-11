@@ -57,7 +57,7 @@ parts where we were wrong.
 
 ## License
 
-MIT, same as the upstream codec. Fork, adapt, deploy — please keep attribution to the codec authors. We publish the clean reimplementations and the recovered specs, never the vendors' proprietary code.
+MIT ([LICENSE](LICENSE)), same as the upstream codec, with two exceptions spelled out in [NOTICE](NOTICE): the vendored codec crates keep their authors' MIT copyrights, and the FFmpeg patches in [`ffmpeg-upstream/`](ffmpeg-upstream/) are LGPL-2.1-or-later, like FFmpeg itself. Fork, adapt, deploy — please keep attribution to the codec authors. We publish the clean reimplementations and the recovered specs, never the vendors' proprietary code.
 
 ---
 
