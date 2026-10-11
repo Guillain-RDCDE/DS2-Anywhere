@@ -15,9 +15,9 @@ Output is a WAV you can play and download. Nothing leaves your machine.
 
 ## Files
 - `index.html` / `main.js` — the page (vanilla, no framework).
-- `pkg/` — the wasm-bindgen output (`dss_codec_wasm.js` + `_bg.wasm`). Committed
-  for instant use; **rebuilt on every deploy** by `.github/workflows/pages.yml`
-  from [`vendor/`](../vendor/).
+- `pkg/` — the wasm-bindgen output (`dss_codec_wasm.js` + `_bg.wasm`). **Not
+  committed**: built on every deploy by `.github/workflows/pages.yml` from
+  [`vendor/`](../vendor/), and by hand with the commands below to try the page locally.
 - `.nojekyll` — so GitHub Pages serves `pkg/` (underscore-prefixed assets) as-is.
 
 ## Build the wasm locally
