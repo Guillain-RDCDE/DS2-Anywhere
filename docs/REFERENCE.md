@@ -125,6 +125,12 @@ getting it anyway. Each one starts from the ground; you can stop at any rung.
    a frame that *cannot exist*. A free oracle, no reference decoder required. Read it for
    the trap: **a stabilising fix that damps a symptom is not evidence you found the
    cause.**
+9. **[Scored against the source](../docs/18-scored-against-the-source.md)** — the review
+   from the other side. Patrick Domack rebuilt our FFmpeg series in his fork and measured
+   every decoder against the speaker's own audio, not against another decoder. The lattice
+   lost, three of our patches had bugs, DS2 SP and LP decoded to noise, and every pause
+   block's frames were being thrown away. We ported his fixes, checked them sample for
+   sample, and sent back the one thing his fork missed.
 
 **How it was actually done:** **[How to circle a closed thing →](../docs/HOW-TO-CIRCLE-A-CLOSED-THING.md)** — the method rather than the result. How you get unstuck on something that will not explain itself: find the constraint that cannot be violated instead of the signal you can compare, treat a redundant-looking field as a case you have not met, and learn to tell "the symptom moved" from "the cause is gone". Our own wrong turn is the worked example. Useful on your first reverse-engineering project and on your hundredth.
 
@@ -140,11 +146,14 @@ getting it anyway. Each one starts from the ground; you can stop at any rung.
 The work didn't stop at our own servers — it's being handed back to the tools everyone else uses:
 
 - **Into FFmpeg.** FFmpeg is the audio/video engine inside VLC, Chrome, OBS and much of
-  the internet. The Olympus DS2 decoder + demuxer and the DSS-SP paused-recording fix
-  have been **submitted to the `ffmpeg-devel` mailing list and are in review**, joined
-  by a two-patch series fixing the DSS SP framing and sample rate for everyone; the
-  Grundig SP decoder patch is staged behind them. Once merged, *every* program built on
-  FFmpeg reads these files for free, forever — no recipe required.
+  the internet. The Olympus DS2 decoder + demuxer, the DSS-SP paused-recording fix and
+  the DSS SP framing and sample-rate series were all **sent to the `ffmpeg-devel`
+  mailing list**, where they drew no review; we stopped chasing the list. The series
+  lives on in **[Patrick Domack's FFmpeg fork](https://github.com/patrickdk77/FFmpeg/releases)**
+  (release n9.0.2b): built on those four patches, with thirty measured fixes on top —
+  DS2 SP and LP, variable rate SP, encryption, seeking and pipes — and a full FATE run
+  passing. Our own decoder now gives the same samples as that fork on every public test
+  vector. [Chapter 18 →](../docs/18-scored-against-the-source.md)
 - **A public specification.** [The first one ever written](../docs/SPEC-grundig-dss-sp.md)
   for the Grundig DSS-SP codec, bit-exact — so nobody has to reverse-engineer it again.
 - **Digital preservation.** A [PRONOM submission](../docs/preservation/PRONOM-submission.md)
@@ -200,7 +209,7 @@ The intellectual heavy-lifting belongs to the people who opened the locks:
 - **Oleksij Rempel** — `libavcodec/dss_sp.c` in FFmpeg, **2014**. The first open DSS SP decoder, and the only one for twelve years. The bug we found in that corner was in the demuxer around it, not in his codec.
 - **Kieran Hirpara** — [hirparak/dss-codec](https://github.com/hirparak/dss-codec) — the reverse-engineering that started all of it. MIT, February 2026.
 - **Gaspard Petit** — [dss-codec-wasm](https://github.com/gaspardpetit/dss-codec-wasm) + [dss-codec fork](https://github.com/gaspardpetit/dss-codec) (streaming decode and decryption, since merged upstream). MIT.
-- **Patrick Domack** — the [FFmpeg C port](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) of the spec. MIT / public domain.
+- **Patrick Domack** — the [FFmpeg C port](https://gist.github.com/patrickdk77/330dd3f593696d103e831c4c1d78d1f9) of the spec (MIT / public domain), and the [FFmpeg fork](https://github.com/patrickdk77/FFmpeg) where the whole DSS/DS2 series now lives, measured against the source audio.
 - **JulsRX** — the Grundig Digta owner who reported the file nobody could decode, and supplied the public sample that made cracking the Grundig codec possible.
 - **lamejs** (LGPL) and **[FFmpeg](https://ffmpeg.org/)** (LGPL) — the MP3 encoders.
 

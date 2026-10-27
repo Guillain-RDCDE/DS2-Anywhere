@@ -703,3 +703,18 @@ pub fn qp_codebook_lookup(coeff: usize, index: usize) -> f64 {
         _ => 0.0,
     }
 }
+
+/// QP7 last reflection coefficient (2-bit index): its own 4-entry codebook,
+/// used where the QP7 width table gives that coefficient 2 bits.
+pub const QP7_CODEBOOK_LAST: [f64; 4] = [
+    -1.867048007e-01,
+    -4.395632825e-02,
+    5.342162361e-02,
+    1.72256036e-01,
+];
+
+/// QP7 noise-frame gain in 1/32768 units (5-bit index).
+pub const QP7_NOISE_GAIN: [u16; 32] = [
+    0, 5, 10, 15, 21, 28, 35, 42, 50, 59, 69, 79, 90, 102, 115, 129, 144, 160, 178, 197, 218, 240,
+    264, 290, 318, 348, 381, 417, 455, 496, 541, 589,
+];

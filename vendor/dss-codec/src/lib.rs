@@ -119,30 +119,22 @@ pub fn decode_to_buffer(data: &[u8]) -> Result<AudioBuffer> {
 
 /// Decode raw file bytes to an AudioBuffer, optionally decrypting encrypted DS2 input first.
 pub fn decode_to_buffer_with_password(data: &[u8], password: Option<&[u8]>) -> Result<AudioBuffer> {
-    // DSS SP: use the block-aware batch demuxer, which handles mid-stream
-    // compact (short/padded) blocks. The streaming demuxer concatenates full
-    // block payloads and mis-reads compact-block padding as audio.
-    // Les fichiers DSS LP portent des trames G.723.1, que ce decodeur
-    // n'implemente pas : le dire, plutot que rendre un flux vide.
-    if detect_format(data) == Some(AudioFormat::DssLp) {
-        let entete = data[0] as usize * 512;
-        let mode = data.get(entete + 4).copied().unwrap_or(0);
-        return Err(DecodeError::DssLp(mode));
-    }
-
-    if detect_format(data) == Some(AudioFormat::DssSp) {
-        let (packets, _total) = crate::demux::dss::demux_dss(data)?;
-        let mut decoder = crate::codec::dss_sp::DssSpDecoder::new();
-        let mut samples = Vec::new();
-        for pkt in &packets {
-            for s in decoder.decode_frame(pkt) {
-                samples.push(s as f64);
-            }
-        }
+    // SP, variable rate SP and LP, in DSS or DS2 files, go through the DSS
+    // block walk. The block headers of an encrypted DS2 file are in the
+    // clear, so the format is known before decrypting.
+    if let Some(format) = detect_format(data).filter(AudioFormat::uses_dss_blocks) {
+        let decrypted;
+        let plain = if data.starts_with(&ENCRYPTED_MAGIC) {
+            decrypted = decrypt_to_bytes(data, password)?;
+            &decrypted[..]
+        } else {
+            data
+        };
+        let samples = decode_dss_blocks(plain)?;
         return Ok(AudioBuffer {
             samples,
-            native_rate: AudioFormat::DssSp.native_sample_rate(),
-            format: AudioFormat::DssSp,
+            native_rate: format.native_sample_rate(),
+            format,
         });
     }
 
@@ -160,6 +152,38 @@ pub fn decode_to_buffer_with_password(data: &[u8], password: Option<&[u8]>) -> R
         native_rate: format.native_sample_rate(),
         format,
     })
+}
+
+/// Decode the plain bytes of a file read by the DSS block walk: SP and
+/// variable rate SP at 11000 Hz, LP at 8000 Hz.
+pub(crate) fn decode_dss_blocks(data: &[u8]) -> Result<Vec<f64>> {
+    use crate::codec::dss_sp::DssSpDecoder;
+    use crate::codec::g723_1::G7231Decoder;
+    use crate::demux::dss::{demux_dss_packets, dss_layout, DssCodec};
+
+    let layout =
+        dss_layout(data).ok_or_else(|| DecodeError::NotDss(std::path::PathBuf::from("<bytes>")))?;
+    let packets = demux_dss_packets(data, layout);
+    let mut samples = Vec::new();
+    match layout.codec {
+        DssCodec::Sp | DssCodec::SpVariableRate => {
+            let mut decoder = if layout.codec == DssCodec::Sp {
+                DssSpDecoder::new()
+            } else {
+                DssSpDecoder::new_variable_rate()
+            };
+            for pkt in &packets {
+                samples.extend(decoder.decode_frame(pkt).into_iter().map(f64::from));
+            }
+        }
+        DssCodec::Lp => {
+            let mut decoder = G7231Decoder::new();
+            for pkt in &packets {
+                samples.extend(decoder.decode_frame(pkt).into_iter().map(f64::from));
+            }
+        }
+    }
+    Ok(samples)
 }
 
 /// Decode a file and write to WAV with given output configuration.

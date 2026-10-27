@@ -26,8 +26,26 @@ Differences from those origins:
   and [`dss-codec/tests/fixtures/`](dss-codec/tests/fixtures/).
 - `dss-codec-wasm/`: `Cargo.toml` points its `dss-codec` dependency at `../dss-codec`
   (the vendored copy) instead of a git submodule, and `format_name()` also covers
-  `DssLp`, a format only the vendored crate knows; the sources are `cargo fmt`-formatted
+  `DssLp` and `Ds2Lp`, formats only the vendored crate knows; the sources are `cargo fmt`-formatted
   and `Cargo.toml` allows one clippy lint, with its reason.
+
+**Ahead of the fork since 27 October 2026** ([chapter 18](../docs/18-scored-against-the-source.md)):
+this copy takes Patrick Domack's FFmpeg fork (release n9.0.2b) as its reference and
+decodes every public test vector to the same samples. In it:
+
+- `src/demux/dss.rs` is a port of the fork's `libavformat/dss.c` block walk. DSS and
+  DS2 files in SP, variable rate SP (format 1) and LP go through it; the frames of
+  pause and stop blocks (count in byte 5) are played, as Olympus's R8 decoder plays
+  them; the swap byte is read from the file; a 1 in byte 0 means a 3-block header
+  (SpeechExec splits). One addition the fork lacks: a DSS header whose codec byte is
+  `0xff` takes the format from the first audio block (3 of 19 real DSS files).
+- `src/codec/dss_sp.rs` is a port of FFmpeg's `dss_sp.c`, the synthesis that scores level
+  with Olympus's 2007 DLL against the source audio, plus format 1. The earlier copy
+  carried changes from the Q15 episode (chapter 16) that were never measured.
+- `src/codec/g723_1.rs` is a port of FFmpeg's G.723.1 decoder, for LP.
+- The old DS2 SP path (`ds2_sp.rs`, 12000 Hz) is gone: DS2 SP blocks are DSS blocks.
+
+Those ports keep FFmpeg's licence, LGPL-2.1-or-later ([NOTICE](../NOTICE)).
 
 The Grundig codec (`dss-codec/src/{codec,demux,tables}/grundig*.rs`) is our own
 clean-room reimplementation, verified bit-exact against the vendor decoder — see

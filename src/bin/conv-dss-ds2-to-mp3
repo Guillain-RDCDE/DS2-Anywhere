@@ -39,7 +39,10 @@ maybe_normalize() {
   local f="$1" b0 magic
   b0=$(head -c1 "$f" 2>/dev/null | od -An -tu1 | tr -d ' ')
   magic=$(head -c4 "$f" 2>/dev/null | tail -c3)
-  if { [ "$magic" = "ds2" ] || [ "$magic" = "dss" ]; } && [ "${b0:-0}" -gt 3 ] && [ "${b0:-0}" -le 16 ]; then
+  # DS2 only: a .dss file whose first byte is 6 is Grundig's own codec, which
+  # the decoder recognises by that byte; rewriting it to 3 made it decode as
+  # Olympus SP, into noise. Other DSS header sizes the decoder reads as they are.
+  if [ "$magic" = "ds2" ] && [ "${b0:-0}" -gt 3 ] && [ "${b0:-0}" -le 16 ]; then
     local tmp
     tmp=$(mktemp --suffix=.ds2 -t grph.XXXXXX) || { printf '%s' "$f"; return; }
     head -c 1536 "$f" > "$tmp"                                          # keep 0x600 metadata header
@@ -95,12 +98,8 @@ fmt=""; rate=""
 if [ $info_exit -eq 0 ]; then
   # Format example: "/path/file.DS2: Ds2Qp, native rate 16000 Hz"
   fmt=$(printf '%s' "$info_out" | awk -F'[:,]' 'NR==1 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print tolower($2)}')
-  # Normalize: "Ds2Qp" -> "ds2_qp", "Ds2Sp" -> "ds2_sp", "DssSp" -> "dss_sp"
-  case "$fmt" in
-    ds2qp) fmt="ds2_qp" ;;
-    ds2sp) fmt="ds2_sp" ;;
-    dsssp) fmt="dss_sp" ;;
-  esac
+  # Normalize: "Ds2Qp" -> "ds2_qp", "DssLp" -> "dss_lp", "GrundigSp" -> "grundig_sp"
+  fmt=$(printf '%s' "$fmt" | sed -E 's/^(ds2|dss|grundig)(..*)$/\1_\2/')
   rate=$(printf '%s' "$info_out" | grep -oE 'native rate [0-9]+' | awk '{print $3}')
 fi
 
@@ -134,16 +133,7 @@ if ! err=$("$NATIVE" -O "$tmp_wav" "${pwd_arg[@]}" "$decode_input" 2>&1); then
   if printf '%s' "$err" | grep -qiE 'encrypt|password'; then
     die 3 "Encrypted file, password invalid or required: $err"
   fi
-  # DSS LP carries G.723.1 frames rather than the SP codec, so the native
-  # decoder refuses them by name. That codec is a published standard and
-  # ffmpeg decodes it, so hand the file over instead of giving up: these are
-  # ordinary dictations from older recorders such as the DS4000.
-  if printf '%s' "$err" | grep -qi 'G\.723\.1'; then
-    if ! err2=$("$FFMPEG" -y -loglevel error -i "$decode_input" -ac 1 \
-                 -c:a pcm_s16le "$tmp_wav" 2>&1); then
-      die 1 "Decode failed (DSS LP via ffmpeg): $err2"
-    fi
-  elif [ "$encryption" = "unknown" ]; then
+  if [ "$encryption" = "unknown" ]; then
     hdr=$(head -c 4 "$input" 2>/dev/null | od -An -tx1 | tr -s ' ')
     die 4 "Unrecognised container (first bytes:$hdr): not a DSS or DS2 file."
   else

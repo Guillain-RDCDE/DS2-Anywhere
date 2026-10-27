@@ -226,8 +226,10 @@ mod tests {
     use std::env;
     use std::path::PathBuf;
 
+    // One test for both cases: tests run in parallel and the variable is
+    // process-wide, so two tests setting and removing it raced.
     #[test]
-    fn resolve_password_prefers_cli_over_env() {
+    fn resolve_password_cli_then_env() {
         unsafe {
             env::set_var("DSS_CODEC_PASSWORD", "env-secret");
         }
@@ -235,16 +237,6 @@ mod tests {
             resolve_password(Some("cli-secret")),
             Some(b"cli-secret".to_vec())
         );
-        unsafe {
-            env::remove_var("DSS_CODEC_PASSWORD");
-        }
-    }
-
-    #[test]
-    fn resolve_password_falls_back_to_env() {
-        unsafe {
-            env::set_var("DSS_CODEC_PASSWORD", "env-secret");
-        }
         assert_eq!(resolve_password(None), Some(b"env-secret".to_vec()));
         unsafe {
             env::remove_var("DSS_CODEC_PASSWORD");

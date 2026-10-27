@@ -8,9 +8,15 @@ Replaces the Wine + Olympus DirectShow + NCH Switch pipeline with a standalone b
 
 | Format | Extension | Sample Rate | Quality | Bit Rate |
 |--------|-----------|-------------|---------|----------|
-| DSS SP | `.dss` | 11000 Hz | Standard | ~13.7 kbps |
-| DS2 SP | `.ds2` (mode 0) | 12000 Hz | Standard | ~13.7 kbps |
-| DS2 QP | `.ds2` (mode 6) | 16000 Hz | Quality | ~28 kbps |
+| DSS / DS2 SP | `.dss`, `.ds2` (format 0) | 11000 Hz | Standard | ~13.7 kbps |
+| DSS / DS2 SP, variable rate | `.dss`, `.ds2` (format 1) | 11000 Hz | Standard | variable |
+| DSS / DS2 LP (G.723.1) | `.dss`, `.ds2` (format 2) | 8000 Hz | Long play | 6.3 kbps |
+| DS2 QP | `.ds2` (format 6) | 16000 Hz | Quality | ~28 kbps |
+| DS2 QP7 | `.ds2` (format 7) | 16000 Hz | Quality, noise frames | variable |
+| Grundig DSS SP | `.dss` (byte 0 = 6) | 16000 Hz | Grundig CELP | ~13.7 kbps |
+
+A DS2 file in SP, variable rate SP or LP carries exactly the audio blocks of a DSS
+file; only the header is bigger, so both go through the same block walk.
 
 Format is auto-detected from the file header.
 
@@ -125,15 +131,15 @@ Input File
     v
 [Demuxer] ─── detect_format() → AudioFormat
     |
-    ├── DSS: block-aware byte-swap demuxer → 42-byte packets
-    ├── DS2 SP: byte-swap demuxer → 42-byte packets
-    └── DS2 QP: continuous bitstream concatenation
+    ├── DSS / DS2 SP, format 1, LP: DSS block walk (port of FFmpeg's dss.c)
+    │     → 42-byte SP packets, or G.723.1 frames
+    └── DS2 QP / QP7: continuous bitstream concatenation
     |
     v
 [Decoder] ─── per-format CELP decoder
     |
-    ├── DSS SP: Q15 integer, Levinson, noise modulation, sinc resample
-    ├── DS2 SP: f64, lattice synthesis, C(72,7) codebook
+    ├── SP: Q15 integer, port of FFmpeg's dss_sp.c (format 1 included)
+    ├── LP: G.723.1, port of FFmpeg's g723_1 decoder
     └── DS2 QP: f64, lattice synthesis, C(64,11) codebook, de-emphasis
     |
     v
@@ -155,22 +161,25 @@ Full technical specification including all algorithms, tables, bit allocations, 
 
 ### Key Parameters
 
-| Parameter | DSS SP | DS2 SP | DS2 QP |
-|-----------|--------|--------|--------|
-| Arithmetic | Q15 integer | f64 float | f64 float |
-| Reflection coefficients | 14 | 14 | 16 |
-| Subframes per frame | 4 | 4 | 4 |
-| Subframe size | 72 | 72 | 64 |
-| Excitation pulses | 7 | 7 | 11 |
-| Codebook | C(72,7) = 31 bits | C(72,7) = 31 bits | C(64,11) = 40 bits |
-| Pitch encoding | Combined 24-bit | Combined 24-bit | Per-subframe 8-bit |
-| Pitch range | 36-186 | 36-186 | 45-300 |
-| Frame bits | 328 | 328 | 448 |
-| Post-processing | Noise modulation + sinc resample | None | De-emphasis (a=0.1) |
+| Parameter | SP (DSS and DS2) | DS2 QP |
+|-----------|--------|--------|
+| Arithmetic | Q15 integer | f64 float |
+| Reflection coefficients | 14 | 16 |
+| Subframes per frame | 4 | 4 |
+| Subframe size | 72 | 64 |
+| Excitation pulses | 7 | 11 |
+| Codebook | C(72,7) = 31 bits | C(64,11) = 40 bits |
+| Pitch encoding | Combined 24-bit | Per-subframe 8-bit |
+| Pitch range | 36-186 | 45-300 |
+| Frame bits | 328 (72 for a format 1 noise frame) | 448 |
+| Post-processing | Noise modulation + 11:12 sinc decimation | De-emphasis (a=0.1) |
 
 ## Verification
 
-Decoded output verified against both the Python reference decoders and Olympus DirectShow reference WAVs:
+SP, variable rate SP, LP and QP give the same samples as Patrick Domack's FFmpeg fork
+(release n9.0.2b) on its public test vectors; `tests/fate_vectors.rs` pins them.
+Earlier verification of the original crate, against the Python reference decoders and
+Olympus DirectShow reference WAVs:
 
 | Format | vs Python | vs DirectShow |
 |--------|-----------|---------------|
@@ -180,7 +189,7 @@ Decoded output verified against both the Python reference decoders and Olympus D
 
 ## Why Not FFmpeg?
 
-FFmpeg's built-in `dss_sp` decoder does **not** work for DS2 files. The Olympus codec uses completely different parameters, tables, and sample rates than what FFmpeg implements. Correlation between FFmpeg output and correct audio is ~0.01 (effectively random). See [FFmpeg Trac #6091](https://trac.ffmpeg.org/ticket/6091).
+FFmpeg's built-in `dss_sp` decoder does **not** work for DS2 files. The Olympus codec uses completely different parameters, tables, and sample rates than what FFmpeg implements. Correlation between FFmpeg output and correct audio is ~0.01 (effectively random). See [FFmpeg Trac #6091](https://trac.ffmpeg.org/ticket/6091). Patrick Domack's [FFmpeg fork](https://github.com/patrickdk77/FFmpeg/releases) (n9.0.2b) reads every one of these formats; this crate gives the same samples.
 
 ## Dependencies
 

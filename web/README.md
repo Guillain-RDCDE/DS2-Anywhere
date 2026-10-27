@@ -1,7 +1,7 @@
 # web/ — in-browser decoder (GitHub Pages)
 
 A static drag-and-drop page that decodes Olympus & Grundig dictation files
-**entirely in the browser** — no upload, no install. One ~196 KB WebAssembly
+**entirely in the browser** — no upload, no install. One ~230 KB WebAssembly
 module decodes all the formats:
 
 | Drop this | Decoded as |

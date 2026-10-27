@@ -3,7 +3,7 @@
 <!-- opening -->
 > Doctors, lawyers and police dictate into small recorders whose file format was kept secret for thirty years. This opens it on any computer, in your browser if you like.
 >
-> Olympus DS2/DSS and Grundig DSS decoded natively on Linux and in the browser through WebAssembly, encrypted files included; the decoder is going upstream into FFmpeg.
+> Olympus DS2/DSS and Grundig DSS decoded natively on Linux and in the browser through WebAssembly, encrypted files included, every mode from SP to LP and QP; the FFmpeg version lives in Patrick Domack's fork.
 >
 > A paid licence and a chain of Windows machines replaced by open code, and the fix given back to everyone. Part of the work of [Guillain d’Erceville](https://github.com/Guillain-RDCDE), forward deployed engineer.
 <!-- opening -->
@@ -11,10 +11,10 @@
 ![DS2-Anywhere — decode Olympus DSS / DS2 dictation files on Linux, pure CLI, no GUI](docs/assets/social-preview.png)
 
 > Open the dictation formats that stayed locked for thirty years — Olympus **DS2/DSS**
-> and now **Grundig DSS** — on any Linux box. No Windows, no GUI, no commercial
+> and now **Grundig DSS** — on any Linux box, SP, LP and QP alike. No Windows, no GUI, no commercial
 > software. A production recipe *and* the reverse-engineering trail behind it. 🔓
 
-[![CI](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Latest release](https://img.shields.io/github/v/release/Guillain-RDCDE/DS2-Anywhere)](https://github.com/Guillain-RDCDE/DS2-Anywhere/releases) ![Status](https://img.shields.io/badge/status-production-green) ![FFmpeg](https://img.shields.io/badge/FFmpeg-patches%20in%20review-orange) ![Platform](https://img.shields.io/badge/platform-linux-blue)
+[![CI](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/Guillain-RDCDE/DS2-Anywhere/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Latest release](https://img.shields.io/github/v/release/Guillain-RDCDE/DS2-Anywhere)](https://github.com/Guillain-RDCDE/DS2-Anywhere/releases) ![Status](https://img.shields.io/badge/status-production-green) [![FFmpeg](https://img.shields.io/badge/FFmpeg-fork%20n9.0.2b-blue)](https://github.com/patrickdk77/FFmpeg/releases) ![Platform](https://img.shields.io/badge/platform-linux-blue)
 
 **In one sentence:** doctors, lawyers and police dictate into small voice recorders;
 the file format those recorders produce was kept secret for thirty years; this project

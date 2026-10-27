@@ -46,9 +46,9 @@
 
   <div id="drop" tabindex="0" role="button" aria-label="Choose or drop a dictation file">
     <div class="big">Drop a dictation file here, or click to choose</div>
-    <div class="hint">.ds2 · .dss — Olympus DSS / DS2 (SP & QP), encrypted DS2, Grundig DSS-SP</div>
+    <div class="hint">.ds2 · .dss — Olympus DSS / DS2 (SP, LP & QP), encrypted DS2, Grundig DSS-SP</div>
     <div style="margin-top:12px">
-      <span class="pill">Olympus DSS-SP</span><span class="pill">DS2-SP / QP</span>
+      <span class="pill">Olympus DSS-SP / LP</span><span class="pill">DS2-SP / LP / QP</span>
       <span class="pill">🔐 Encrypted DS2</span><span class="pill">Grundig DSS-SP</span>
     </div>
   </div>
@@ -57,7 +57,7 @@
   <div id="out"></div>
 
   <footer>
-    Everything runs locally via a 196&nbsp;KB WebAssembly decoder.
+    Everything runs locally via a 230&nbsp;KB WebAssembly decoder.
     The Grundig codec is decoded <a href="https://github.com/Guillain-RDCDE/DS2-Anywhere/blob/main/docs/12-cracking-the-grundig-sp-codec.md">bit-exact</a> —
     no open or commercial tool could read it before.
     <br><a href="https://github.com/Guillain-RDCDE/DS2-Anywhere">Source on GitHub</a>

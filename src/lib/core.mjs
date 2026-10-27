@@ -69,10 +69,7 @@ export async function inspectFile(path) {
   let format = "", nativeRate = 0;
   if (m) {
     const raw = m[1].toLowerCase();
-    format = raw === "ds2qp" ? "ds2_qp"
-           : raw === "ds2sp" ? "ds2_sp"
-           : raw === "dsssp" ? "dss_sp"
-           : raw;
+    format = raw.replace(/^(ds2|dss|grundig)(.+)$/, "$1_$2");
     nativeRate = parseInt(m[2], 10);
   }
   return { format, encryption, nativeRate, bytes: st.size };

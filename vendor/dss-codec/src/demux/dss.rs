@@ -1,19 +1,124 @@
-/// DSS block-aware demuxer with byte-swap frame extraction.
+/// DSS block walk: the frames of DSS files, and of DS2 files recorded in SP,
+/// variable rate SP or LP, whose audio blocks are the same as in DSS.
 ///
-/// Handles empty blocks (frame_count=0) by only including continuation bytes
-/// from empty block payloads, and resetting swap state at block group boundaries.
+/// This follows Patrick Domack's libavformat/dss.c (FFmpeg fork, n9.0.2b;
+/// the file is Copyright (c) 2014 Oleksij Rempel, LGPL-2.1-or-later, and so is
+/// this port of it), which reads the block headers the way Olympus's R8
+/// decoder does:
+///
+/// - each block states where its first frame starts, the byte-swap parity of
+///   that frame, and how many frames start in it;
+/// - a block written at a pause or stop leaves byte 2 at 0 and puts the frame
+///   count in byte 5, and those frames are played;
+/// - the byte a swapped frame takes from the frame before it is read from the
+///   file, two bytes before the frame, rather than carried over, so a cut file
+///   or a block that restarts the framing still decodes;
+/// - in variable rate SP (format 1) a frame is 41 or 9 bytes, from its type
+///   bit;
+/// - LP frames are G.723.1, sized from their first byte.
+///
+/// A frame that the file ends inside is dropped, as FFmpeg and R8 do.
 use crate::error::{DecodeError, Result};
-use std::collections::VecDeque;
 
 const DSS_BLOCK_SIZE: usize = 512;
 const DSS_BLOCK_HEADER_SIZE: usize = 6;
-const DSS_SP_FRAME_SIZE: usize = 42;
+/// Size of an SP packet handed to the decoder.
+pub const DSS_SP_FRAME_SIZE: usize = 42;
+const DSS_SP_SHORT_FRAME_SIZE: usize = 9;
+/// Offset of the codec byte in a DSS file header.
+const DSS_HEAD_OFFSET_ACODEC: usize = 0x2a4;
+/// G.723.1 frame sizes, by the low two bits of the frame's first byte.
+const G723_1_FRAME_SIZE: [usize; 4] = [24, 20, 4, 1];
 
-struct BlockInfo {
-    frame_count: usize,
-    swap: usize,
-    cont_size: usize,
-    payload: Vec<u8>,
+/// Codec of the audio blocks, the format byte of each block header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DssCodec {
+    /// Format 0, SP: 41-byte frames.
+    Sp,
+    /// Format 1, variable rate SP: 41-byte frames and 9-byte noise frames.
+    SpVariableRate,
+    /// Format 2, LP: G.723.1 frames.
+    Lp,
+}
+
+impl DssCodec {
+    pub fn from_format_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0 => Some(DssCodec::Sp),
+            1 => Some(DssCodec::SpVariableRate),
+            2 => Some(DssCodec::Lp),
+            _ => None,
+        }
+    }
+
+    /// The format byte of an audio block, as DssParser.dll reads it: modes 3
+    /// and 5 are LP too, with SID frames among the G.723.1 frames.
+    fn from_block_format_byte(byte: u8) -> Option<Self> {
+        match byte {
+            3 | 5 => Some(DssCodec::Lp),
+            _ => Self::from_format_byte(byte),
+        }
+    }
+}
+
+/// Header size from the first byte of the file, in 512-byte blocks. Philips
+/// SpeechExec writes 1 in the DS2 files it splits out of a recording, over the
+/// usual 3 blocks.
+pub fn dss_header_size(first_byte: u8) -> usize {
+    (if first_byte == 1 {
+        3
+    } else {
+        first_byte as usize
+    }) * DSS_BLOCK_SIZE
+}
+
+/// Where the audio starts and which codec it is, for a file read by this walk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DssLayout {
+    pub header_size: usize,
+    pub codec: DssCodec,
+}
+
+/// Layout of a DSS file, a DS2 file in SP or LP, or a DSS file without its
+/// header. `None` when the file is none of these.
+pub fn dss_layout(data: &[u8]) -> Option<DssLayout> {
+    if data.len() >= 4 && data[1..4] == *b"dss" && data[0] > 0 && data[0] <= 32 && data[0] != 6 {
+        let header_size = dss_header_size(data[0]);
+        // Some recorders leave the header's codec field at 0xff (seen on real
+        // SP dictations with 3, 8 and 19-block headers); the format byte of
+        // the first audio block still says what the frames are.
+        let codec = DssCodec::from_format_byte(*data.get(DSS_HEAD_OFFSET_ACODEC)?)
+            .or_else(|| DssCodec::from_block_format_byte(*data.get(header_size + 4)?))?;
+        return Some(DssLayout { header_size, codec });
+    }
+    let ds2 = data.len() >= 4
+        && (data[1..4] == *b"ds2" || data[..4] == crate::crypto::ds2_encrypted::ENCRYPTED_MAGIC)
+        && (1..=16).contains(&data[0]);
+    if ds2 {
+        // DS2 leaves the DSS codec field unset; each block header states it.
+        let header_size = dss_header_size(data[0]);
+        let codec = DssCodec::from_format_byte(*data.get(header_size + 4)?)?;
+        return Some(DssLayout { header_size, codec });
+    }
+    if looks_like_headerless_dss(data) {
+        let codec = DssCodec::from_format_byte(data[4])?;
+        return Some(DssLayout {
+            header_size: 0,
+            codec,
+        });
+    }
+    None
+}
+
+/// Frames that start in an audio block: byte 2 when it is not 0, otherwise
+/// byte 5 unless that is 0xff. A recorder writes the second form where it
+/// pauses or stops, and Olympus's decoder plays those frames.
+pub(crate) fn dss_block_frames(header: &[u8]) -> usize {
+    if header[2] != 0 || header[5] == 0xff {
+        header[2] as usize
+    } else {
+        header[5] as usize
+    }
 }
 
 /// Un fichier DSS dont l'en-tete a ete perdu commence directement par ses blocs
@@ -61,417 +166,357 @@ pub fn looks_like_headerless_dss(data: &[u8]) -> bool {
     liens >= 12 && tenus * 5 >= liens * 4
 }
 
-pub fn demux_dss(data: &[u8]) -> Result<(Vec<Vec<u8>>, usize)> {
-    // Byte 0 is the header size in 512-byte blocks. Two and three are what the
-    // common recorders write, but others use a larger header, and refusing them
-    // sent the file down the DS2 path where it failed with a misleading message.
-    // Byte 0 is the header size in 512-byte blocks. Two and three are what the
-    // common recorders write, but others use a larger header, and refusing them
-    // sent the file down the DS2 path where it failed with a misleading message.
-    let entete_valide = data.len() >= 4 && data[1..4] == *b"dss" && data[0] > 0 && data[0] <= 32;
-    let sans_entete = !entete_valide && looks_like_headerless_dss(data);
-    if !entete_valide && !sans_entete {
-        return Err(DecodeError::NotDss(std::path::PathBuf::from("<bytes>")));
-    }
-
-    let header_size = if sans_entete {
-        0
-    } else {
-        data[0] as usize * DSS_BLOCK_SIZE
-    };
-    let num_blocks = (data.len() - header_size) / DSS_BLOCK_SIZE;
-
-    // Byte 4 of a block header selects the frame size, through the table
-    // DssParser.dll indexes with it. Mode 0 is the 328-bit, 41-byte SP frame
-    // this decoder implements. The other modes carry G.723.1 instead: mode 2 is
-    // its 192-bit (24-byte) frame, modes 3 and 5 add the 32-bit SID frame.
-    // Reading those as SP produces noise, so name them for what they are.
-    if num_blocks > 0 {
-        let mode = data[header_size + 4];
-        if mode != 0 {
-            return Err(DecodeError::DssLp(mode));
-        }
-    }
-
-    let mut blocks = Vec::with_capacity(num_blocks);
-    let mut total_frames: usize = 0;
-
-    for bi in 0..num_blocks {
-        let bstart = header_size + bi * DSS_BLOCK_SIZE;
-        let byte0 = data[bstart];
-        let byte1 = data[bstart + 1] as usize;
-        let frame_count = data[bstart + 2] as usize;
-        let blk_swap = ((byte0 >> 7) & 1) as usize;
-        let cont_size = (2 * byte1 + 2 * blk_swap).saturating_sub(DSS_BLOCK_HEADER_SIZE);
-        let payload_end = bstart + DSS_BLOCK_SIZE;
-        let payload = data[bstart + DSS_BLOCK_HEADER_SIZE..payload_end].to_vec();
-        blocks.push(BlockInfo {
-            frame_count,
-            swap: blk_swap,
-            cont_size,
-            payload,
-        });
-        total_frames += frame_count;
-    }
-
-    // Le conteneur se decrit lui-meme : chaque bloc donne l'offset de sa
-    // premiere trame et la parite d'echange qui va avec. Plutot que de derouler
-    // une marche continue qui peut se desynchroniser sans jamais s'en rendre
-    // compte, on repart de ce que chaque bloc declare. Une trame qui deborde
-    // sur le bloc suivant se lit sans rien de special, puisque les charges
-    // utiles sont concatenees ; et si le debordement ne correspond pas a ce que
-    // le bloc suivant annonce, la remise en place est automatique.
-    let mut stream: Vec<u8> = Vec::new();
-    let mut debuts: Vec<usize> = Vec::with_capacity(blocks.len());
-    for b in blocks.iter() {
-        debuts.push(stream.len());
-        stream.extend_from_slice(&b.payload);
-    }
-
-    let mut frame_packets = Vec::with_capacity(total_frames);
-    let mut swap_byte: u8 = 0;
-
-    for (bi, b) in blocks.iter().enumerate() {
-        if b.frame_count == 0 {
-            continue;
-        }
-        let mut spos = debuts[bi] + b.cont_size.min(b.payload.len());
-        let mut swap = b.swap;
-
-        for _ in 0..b.frame_count {
-            let mut pkt = [0u8; DSS_SP_FRAME_SIZE + 1];
-            if swap != 0 {
-                let read_size = 40;
-                let end = (spos + read_size).min(stream.len());
-                let start = spos.min(end);
-                let count = end - start;
-                pkt[3..3 + count].copy_from_slice(&stream[start..end]);
-                spos += read_size;
-                for i in (0..DSS_SP_FRAME_SIZE - 2).step_by(2) {
-                    pkt[i] = pkt[i + 4];
-                }
-                pkt[DSS_SP_FRAME_SIZE] = 0;
-                pkt[1] = swap_byte;
-            } else {
-                let end = (spos + DSS_SP_FRAME_SIZE).min(stream.len());
-                let start = spos.min(end);
-                let count = end - start;
-                pkt[..count].copy_from_slice(&stream[start..end]);
-                spos += DSS_SP_FRAME_SIZE;
-                swap_byte = pkt[DSS_SP_FRAME_SIZE - 2];
-            }
-            pkt[DSS_SP_FRAME_SIZE - 2] = 0;
-            swap ^= 1;
-            frame_packets.push(pkt[..DSS_SP_FRAME_SIZE].to_vec());
-        }
-    }
-
-    Ok((frame_packets, total_frames))
-}
-
-pub(crate) struct DssSpStreamDemuxer {
+/// The reader. Offsets are file offsets; `pos` is where the next byte is read.
+struct Walk<'a> {
+    data: &'a [u8],
     header_size: usize,
-    header_complete: bool,
-    block_buf: Vec<u8>,
-    stream_buf: Vec<u8>,
-    stream_pos: usize,
-    swap: usize,
-    swap_byte: u8,
-    /// Blocs recus dont les trames restent a emettre : (debut de la premiere
-    /// trame dans le flux, nombre de trames, parite d'echange declaree).
-    en_attente: VecDeque<(usize, usize, usize)>,
-    stream_end_pos: usize,
+    pos: usize,
+    /// Offset of the header of the current block, one block before the first
+    /// audio block until a block is read.
+    block_pos: isize,
+    frames_left: usize,
+    swap: bool,
+    /// The byte a swapped frame takes from the frame before it, if known.
+    swap_byte: Option<u8>,
 }
 
-impl DssSpStreamDemuxer {
-    pub(crate) fn new(version: u8) -> Self {
+enum Frame {
+    Packet(Vec<u8>),
+    /// A swapped frame whose borrowed byte is not in the file: left out.
+    Dropped,
+}
+
+impl<'a> Walk<'a> {
+    fn new(data: &'a [u8], header_size: usize) -> Self {
         Self {
-            header_size: version as usize * DSS_BLOCK_SIZE,
-            header_complete: false,
-            block_buf: Vec::new(),
-            stream_buf: Vec::new(),
-            stream_pos: 0,
-            swap: 0,
-            swap_byte: 0,
-            en_attente: VecDeque::new(),
-            stream_end_pos: 0,
+            data,
+            header_size,
+            pos: header_size,
+            block_pos: header_size as isize - DSS_BLOCK_SIZE as isize,
+            frames_left: 0,
+            swap: false,
+            swap_byte: None,
         }
     }
 
-    pub(crate) fn push(&mut self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        let mut frames = Vec::new();
-        let mut offset = 0;
-
-        if !self.header_complete {
-            let needed = self.header_size.saturating_sub(self.block_buf.len());
-            let take = needed.min(data.len());
-            self.block_buf.extend_from_slice(&data[..take]);
-            offset += take;
-            if self.block_buf.len() < self.header_size {
-                return Ok(frames);
+    /// Read `buf.len()` bytes of frame payload, stepping over any block header
+    /// met on the way. False when the file ends first.
+    fn read_payload(&mut self, buf: &mut [u8]) -> bool {
+        let mut done = 0;
+        while done < buf.len() {
+            let off = (self.pos - self.header_size) % DSS_BLOCK_SIZE;
+            if off < DSS_BLOCK_HEADER_SIZE {
+                self.pos += DSS_BLOCK_HEADER_SIZE - off;
+                continue;
             }
-            self.header_complete = true;
-            self.block_buf.clear();
+            let chunk = (buf.len() - done).min(DSS_BLOCK_SIZE - off);
+            let Some(src) = self.data.get(self.pos..self.pos + chunk) else {
+                return false;
+            };
+            buf[done..done + chunk].copy_from_slice(src);
+            self.pos += chunk;
+            done += chunk;
         }
-
-        self.block_buf.extend_from_slice(&data[offset..]);
-        while self.block_buf.len() >= DSS_BLOCK_SIZE {
-            let block: Vec<u8> = self.block_buf.drain(..DSS_BLOCK_SIZE).collect();
-            self.process_block(&block, &mut frames);
-        }
-
-        Ok(frames)
+        true
     }
 
-    pub(crate) fn finish(&mut self) -> Result<Vec<Vec<u8>>> {
-        if !self.header_complete {
-            if self.block_buf.is_empty() {
-                return Ok(Vec::new());
+    /// Move to the next audio block that holds frames and take the framing
+    /// from its header. False at the end of the file.
+    fn next_block(&mut self) -> bool {
+        loop {
+            self.block_pos += DSS_BLOCK_SIZE as isize;
+            let start = self.block_pos as usize;
+            let Some(header) = self.data.get(start..start + DSS_BLOCK_HEADER_SIZE) else {
+                return false;
+            };
+
+            self.swap = header[0] & 0x80 != 0;
+            let mut cont =
+                2 * header[1] as isize + 2 * self.swap as isize - DSS_BLOCK_HEADER_SIZE as isize;
+            if cont < 0 || cont > (DSS_BLOCK_SIZE - DSS_BLOCK_HEADER_SIZE) as isize {
+                cont = 0;
             }
-            return Err(DecodeError::Truncated("DSS header".to_string()));
-        }
-        if !self.block_buf.is_empty() {
-            return Err(DecodeError::Truncated("DSS block".to_string()));
-        }
-        if !self.en_attente.is_empty() {
-            return Err(DecodeError::Truncated("DSS SP frame".to_string()));
-        }
-        Ok(Vec::new())
-    }
+            let cont = cont as usize;
 
-    pub(crate) fn finish_lenient(&mut self) -> Result<Vec<Vec<u8>>> {
-        if !self.header_complete {
-            if self.block_buf.is_empty() {
-                return Ok(Vec::new());
+            self.frames_left = dss_block_frames(header);
+            if self.frames_left == 0 {
+                continue;
             }
-            return Err(DecodeError::Truncated("DSS header".to_string()));
-        }
 
-        self.block_buf.clear();
-
-        // Fin de flux : on emet ce qui reste, en tolerant une derniere trame
-        // tronquee.
-        let mut frames = Vec::new();
-        while let Some((debut, fc, sw)) = self.en_attente.pop_front() {
-            self.stream_pos = debut.min(self.stream_buf.len() + self.stream_pos);
-            self.swap = sw;
-            for _ in 0..fc {
-                let taille = if self.swap != 0 {
-                    40
-                } else {
-                    DSS_SP_FRAME_SIZE
-                };
-                frames.push(self.extract_packet_padded(taille));
+            // A swapped frame takes one byte from the frame before it, two
+            // bytes before its own start, in this block or at the end of the
+            // previous one.
+            if self.swap {
+                let mut at = start as isize + cont as isize - 2;
+                if cont >= 2 {
+                    at += DSS_BLOCK_HEADER_SIZE as isize;
+                }
+                if at >= (self.header_size + DSS_BLOCK_HEADER_SIZE) as isize {
+                    // avio_r8 past the end gives 0.
+                    self.swap_byte = Some(self.data.get(at as usize).copied().unwrap_or(0));
+                }
             }
-            self.compact_stream();
-        }
 
-        Ok(frames)
-    }
-
-    fn process_block(&mut self, block: &[u8], frames: &mut Vec<Vec<u8>>) {
-        let byte0 = block[0];
-        let byte1 = block[1] as usize;
-        let frame_count = block[2] as usize;
-        let blk_swap = ((byte0 >> 7) & 1) as usize;
-        let cont_size = (2 * byte1 + 2 * blk_swap).saturating_sub(DSS_BLOCK_HEADER_SIZE);
-        let payload = &block[DSS_BLOCK_HEADER_SIZE..];
-
-        // Comme en mode par lot : le bloc dit lui-meme ou commence sa premiere
-        // trame et avec quelle parite. On note cela et on emettra ses trames
-        // des que les octets seront la -- la derniere peut deborder sur le
-        // bloc suivant.
-        let debut = self.stream_end_pos;
-        self.stream_buf.extend_from_slice(payload);
-        self.stream_end_pos += payload.len();
-        if frame_count > 0 {
-            self.en_attente.push_back((
-                debut + cont_size.min(payload.len()),
-                frame_count,
-                blk_swap,
-            ));
-        }
-
-        self.emit_available_frames(frames);
-    }
-
-    fn emit_available_frames(&mut self, frames: &mut Vec<Vec<u8>>) {
-        while let Some(&(debut, fc, sw)) = self.en_attente.front() {
-            // De combien d'octets ce bloc a-t-il besoin en tout ?
-            let mut besoin = 0usize;
-            let mut p = sw;
-            for _ in 0..fc {
-                besoin += if p != 0 { 40 } else { DSS_SP_FRAME_SIZE };
-                p ^= 1;
-            }
-            if debut + besoin > self.stream_end_pos {
-                break;
-            }
-            self.stream_pos = debut;
-            self.swap = sw;
-            for _ in 0..fc {
-                let taille = if self.swap != 0 {
-                    40
-                } else {
-                    DSS_SP_FRAME_SIZE
-                };
-                frames.push(self.extract_packet(taille));
-            }
-            self.en_attente.pop_front();
-            self.compact_stream();
+            self.pos = start + DSS_BLOCK_HEADER_SIZE + cont;
+            return true;
         }
     }
 
-    fn extract_packet(&mut self, read_size: usize) -> Vec<u8> {
+    fn sp_frame(&mut self, variable_rate: bool) -> Option<Frame> {
+        if self.frames_left == 0 && !self.next_block() {
+            return None;
+        }
+
+        // The packet keeps one byte of padding past the frame, which a swapped
+        // long frame reads into and the decoder never sees.
         let mut pkt = [0u8; DSS_SP_FRAME_SIZE + 1];
-        let end = self.stream_pos + read_size;
-        let chunk = self.stream_buf[self.stream_pos..end].to_vec();
-        self.fill_packet(&mut pkt, chunk);
-        self.stream_pos = end;
-        pkt[..DSS_SP_FRAME_SIZE].to_vec()
-    }
+        let mut size = DSS_SP_FRAME_SIZE - 1;
+        let mut done = 0;
 
-    fn extract_packet_padded(&mut self, read_size: usize) -> Vec<u8> {
-        let take = read_size.min(self.available_stream());
-        let end = self.stream_pos + take;
-        let chunk = self.stream_buf[self.stream_pos..end].to_vec();
-        let mut pkt = [0u8; DSS_SP_FRAME_SIZE + 1];
-        self.fill_packet(&mut pkt, chunk);
-        self.stream_pos = end;
-        pkt[..DSS_SP_FRAME_SIZE].to_vec()
-    }
-
-    fn fill_packet(&mut self, pkt: &mut [u8; DSS_SP_FRAME_SIZE + 1], chunk: Vec<u8>) {
-        if self.swap != 0 {
-            pkt[3..3 + chunk.len()].copy_from_slice(&chunk);
-            for i in (0..DSS_SP_FRAME_SIZE - 2).step_by(2) {
-                pkt[i] = pkt[i + 4];
+        // In variable rate SP the top bit of the frame's first byte, in 16-bit
+        // word order, is clear for a short frame. A swapped frame starts with
+        // the byte carried over from the previous frame; otherwise it is the
+        // second byte read.
+        if variable_rate {
+            if self.swap {
+                if matches!(self.swap_byte, Some(b) if b & 0x80 == 0) {
+                    size = DSS_SP_SHORT_FRAME_SIZE;
+                }
+            } else {
+                if !self.read_payload(&mut pkt[..2]) {
+                    return None;
+                }
+                done = 2;
+                if pkt[1] & 0x80 == 0 {
+                    size = DSS_SP_SHORT_FRAME_SIZE;
+                }
             }
-            pkt[DSS_SP_FRAME_SIZE] = 0;
-            pkt[1] = self.swap_byte;
+        }
+
+        // A swapped frame reads one byte less than its size, starting at
+        // offset 3; an unswapped one reads one byte more.
+        let ok = if self.swap {
+            self.read_payload(&mut pkt[3..3 + size - 1])
         } else {
-            pkt[..chunk.len()].copy_from_slice(&chunk);
-            self.swap_byte = pkt[DSS_SP_FRAME_SIZE - 2];
+            self.read_payload(&mut pkt[done..size + 1])
+        };
+        if !ok {
+            return None;
         }
-        pkt[DSS_SP_FRAME_SIZE - 2] = 0;
-        self.swap ^= 1;
+        self.frames_left -= 1;
+
+        if self.swap {
+            let mut i = 0;
+            while i < size - 1 {
+                pkt[i] = pkt[i + 4];
+                i += 2;
+            }
+            pkt[1] = self.swap_byte.unwrap_or(0);
+        } else {
+            self.swap_byte = Some(pkt[size - 1]);
+        }
+        for b in &mut pkt[size + 1..] {
+            *b = 0;
+        }
+        pkt[size - 1] = 0;
+        self.swap = !self.swap;
+
+        if self.swap_byte.is_none() {
+            return Some(Frame::Dropped);
+        }
+        Some(Frame::Packet(pkt[..DSS_SP_FRAME_SIZE].to_vec()))
     }
 
-    fn available_stream(&self) -> usize {
-        self.stream_buf.len().saturating_sub(self.stream_pos)
+    fn lp_frame(&mut self) -> Option<Frame> {
+        if self.frames_left == 0 && !self.next_block() {
+            return None;
+        }
+        let mut first = [0u8; 1];
+        if !self.read_payload(&mut first) || first[0] == 0xff {
+            return None;
+        }
+        let size = G723_1_FRAME_SIZE[(first[0] & 3) as usize];
+        let mut pkt = vec![0u8; size];
+        pkt[0] = first[0];
+        if !self.read_payload(&mut pkt[1..]) {
+            return None;
+        }
+        self.frames_left -= 1;
+        Some(Frame::Packet(pkt))
     }
+}
 
-    fn compact_stream(&mut self) {
-        if self.stream_pos == 0 {
-            return;
+/// Every frame of the file, as the packets the decoder takes: 42 bytes for SP
+/// and variable rate SP, the G.723.1 frame for LP.
+pub fn demux_dss_packets(data: &[u8], layout: DssLayout) -> Vec<Vec<u8>> {
+    let mut walk = Walk::new(data, layout.header_size);
+    let mut packets = Vec::new();
+    loop {
+        let frame = match layout.codec {
+            DssCodec::Sp => walk.sp_frame(false),
+            DssCodec::SpVariableRate => walk.sp_frame(true),
+            DssCodec::Lp => walk.lp_frame(),
+        };
+        match frame {
+            Some(Frame::Packet(pkt)) => packets.push(pkt),
+            Some(Frame::Dropped) => {}
+            None => break,
         }
-        if self.stream_pos >= self.stream_buf.len() {
-            self.stream_buf.clear();
-            self.stream_pos = 0;
-            return;
-        }
-        self.stream_buf.drain(..self.stream_pos);
-        let consumed = self.stream_pos;
-        self.stream_pos = 0;
-        for (debut, _, _) in &mut self.en_attente {
-            *debut = debut.saturating_sub(consumed);
-        }
-        self.stream_end_pos = self.stream_end_pos.saturating_sub(consumed);
     }
+    packets
+}
+
+/// SP packets of a DSS file, for callers that only handle format 0.
+pub fn demux_dss(data: &[u8]) -> Result<(Vec<Vec<u8>>, usize)> {
+    let layout =
+        dss_layout(data).ok_or_else(|| DecodeError::NotDss(std::path::PathBuf::from("<bytes>")))?;
+    let packets = demux_dss_packets(data, layout);
+    let total = packets.len();
+    Ok((packets, total))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_dss_block(
-        swap: u8,
-        byte1: u8,
-        frame_count: u8,
-        payload_pattern: u8,
-    ) -> [u8; DSS_BLOCK_SIZE] {
-        let mut block = [0u8; DSS_BLOCK_SIZE];
-        block[0] = swap << 7;
-        block[1] = byte1;
-        block[2] = frame_count;
-        for (i, byte) in block[DSS_BLOCK_HEADER_SIZE..].iter_mut().enumerate() {
-            *byte = payload_pattern.wrapping_add(i as u8);
+    fn dss_file(codec_byte: u8, blocks: &[[u8; DSS_BLOCK_SIZE]]) -> Vec<u8> {
+        let mut data = vec![0u8; 2 * DSS_BLOCK_SIZE];
+        data[0] = 2;
+        data[1..4].copy_from_slice(b"dss");
+        data[DSS_HEAD_OFFSET_ACODEC] = codec_byte;
+        for b in blocks {
+            data.extend_from_slice(b);
         }
-        block
+        data
     }
 
-    fn collect_frames(
-        demuxer: &mut DssSpStreamDemuxer,
-        data: &[u8],
-        chunk_size: usize,
-    ) -> Vec<Vec<u8>> {
-        let mut frames = Vec::new();
-        for chunk in data.chunks(chunk_size) {
-            frames.extend(demuxer.push(chunk).unwrap());
+    fn block(swap: u8, byte1: u8, frames: u8, byte5: u8, fill: u8) -> [u8; DSS_BLOCK_SIZE] {
+        let mut b = [fill; DSS_BLOCK_SIZE];
+        b[0] = swap << 7;
+        b[1] = byte1;
+        b[2] = frames;
+        b[3] = 0xff;
+        b[4] = 0;
+        b[5] = byte5;
+        b
+    }
+
+    #[test]
+    fn frames_in_pause_blocks_are_read() {
+        // Byte 2 at 0 and byte 5 giving the count: a pause block.
+        let data = dss_file(0, &[block(0, 3, 0, 4, 0x11)]);
+        let layout = dss_layout(&data).unwrap();
+        assert_eq!(demux_dss_packets(&data, layout).len(), 4);
+    }
+
+    #[test]
+    fn byte5_0xff_means_no_frames() {
+        let data = dss_file(0, &[block(0, 3, 0, 0xff, 0x11)]);
+        let layout = dss_layout(&data).unwrap();
+        assert!(demux_dss_packets(&data, layout).is_empty());
+    }
+
+    #[test]
+    fn a_frame_cut_by_the_end_of_the_file_is_dropped() {
+        // 13 frames would need 13 * 41 = 533 bytes, the block holds 506.
+        let data = dss_file(0, &[block(0, 3, 13, 0, 0x22)]);
+        let layout = dss_layout(&data).unwrap();
+        assert_eq!(demux_dss_packets(&data, layout).len(), 12);
+    }
+
+    #[test]
+    fn frames_run_on_into_the_next_block() {
+        let data = dss_file(
+            0,
+            &[block(0, 3, 13, 0, 0x22), block(1, 3 + 13, 0, 0xff, 0x33)],
+        );
+        let layout = dss_layout(&data).unwrap();
+        let packets = demux_dss_packets(&data, layout);
+        assert_eq!(packets.len(), 13);
+        assert!(packets.iter().all(|p| p.len() == DSS_SP_FRAME_SIZE));
+    }
+
+    #[test]
+    fn a_first_swapped_frame_without_its_byte_is_left_out() {
+        // The first block of the file starts on a swapped frame: the byte it
+        // borrows is before the audio, so the frame is dropped.
+        let data = dss_file(0, &[block(1, 2, 2, 0, 0x44)]);
+        let layout = dss_layout(&data).unwrap();
+        assert_eq!(demux_dss_packets(&data, layout).len(), 1);
+    }
+
+    #[test]
+    fn variable_rate_short_frames_are_nine_bytes() {
+        // All bytes 0: every type bit is clear, so every frame is short.
+        let data = dss_file(1, &[block(0, 3, 40, 0, 0x00)]);
+        let layout = dss_layout(&data).unwrap();
+        assert_eq!(layout.codec, DssCodec::SpVariableRate);
+        // 40 short frames take 360 bytes and fit in the block.
+        assert_eq!(demux_dss_packets(&data, layout).len(), 40);
+    }
+
+    #[test]
+    fn lp_frames_take_their_size_from_the_first_byte() {
+        let mut b = block(0, 3, 3, 0, 0);
+        b[6] = 0; // 24 bytes
+        b[30] = 1; // 20 bytes
+        b[50] = 2; // 4 bytes
+        let data = dss_file(2, &[b]);
+        let layout = dss_layout(&data).unwrap();
+        let packets = demux_dss_packets(&data, layout);
+        let sizes: Vec<usize> = packets.iter().map(|p| p.len()).collect();
+        assert_eq!(sizes, vec![24, 20, 4]);
+    }
+
+    #[test]
+    fn an_unset_header_codec_falls_back_to_the_block() {
+        let mut data = dss_file(0xff, &[block(0, 3, 2, 0, 0x55)]);
+        assert_eq!(dss_layout(&data).unwrap().codec, DssCodec::Sp);
+        // A header of 19 blocks, as one real recorder writes.
+        let mut big = vec![0u8; 19 * DSS_BLOCK_SIZE];
+        big[..1024].copy_from_slice(&data[..1024]);
+        big[0] = 19;
+        big.extend_from_slice(&data[1024..]);
+        data = big;
+        let layout = dss_layout(&data).unwrap();
+        assert_eq!(layout.header_size, 19 * DSS_BLOCK_SIZE);
+        assert_eq!(demux_dss_packets(&data, layout).len(), 2);
+    }
+
+    #[test]
+    fn ds2_sp_and_lp_use_the_block_format_byte() {
+        for (fmt, codec) in [
+            (0u8, DssCodec::Sp),
+            (1, DssCodec::SpVariableRate),
+            (2, DssCodec::Lp),
+        ] {
+            let mut data = vec![0u8; 3 * DSS_BLOCK_SIZE];
+            data[..4].copy_from_slice(b"\x03ds2");
+            let mut b = block(0, 3, 1, 0, 0);
+            b[4] = fmt;
+            data.extend_from_slice(&b);
+            assert_eq!(dss_layout(&data).unwrap().codec, codec);
+            // A file split out by SpeechExec says 1 for its 3-block header.
+            data[0] = 1;
+            assert_eq!(dss_layout(&data).unwrap().header_size, 3 * DSS_BLOCK_SIZE);
         }
-        frames.extend(demuxer.finish().unwrap());
-        frames
     }
 
     #[test]
-    fn test_dss_stream_demux_matches_batch() {
-        let mut data = vec![0u8; 2 * DSS_BLOCK_SIZE];
-        data[0] = 2;
-        data[1..4].copy_from_slice(b"dss");
-        data.extend_from_slice(&make_dss_block(0, 0, 3, 0x20));
-
-        let (expected, _) = demux_dss(&data).unwrap();
-        let mut demuxer = DssSpStreamDemuxer::new(2);
-        let actual = collect_frames(&mut demuxer, &data, 149);
-
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_dss_stream_demux_empty_block_reset_matches_batch() {
-        let mut data = vec![0u8; 2 * DSS_BLOCK_SIZE];
-        data[0] = 2;
-        data[1..4].copy_from_slice(b"dss");
-        data.extend_from_slice(&make_dss_block(0, 0, 13, 0x10));
-        data.extend_from_slice(&make_dss_block(1, 17, 0, 0x80));
-        data.extend_from_slice(&make_dss_block(1, 0, 1, 0xC0));
-
-        let (expected, _) = demux_dss(&data).unwrap();
-        let mut demuxer = DssSpStreamDemuxer::new(2);
-        let actual = collect_frames(&mut demuxer, &data, 127);
-
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_dss_demux_overdeclared_frames_no_panic() {
-        // A block that declares more frames than its payload holds makes the
-        // frame walk run past the end of the assembled stream; the trailing
-        // packets must come back zero-padded instead of panicking.
-        let mut data = vec![0u8; 2 * DSS_BLOCK_SIZE];
-        data[0] = 2;
-        data[1..4].copy_from_slice(b"dss");
-        data.extend_from_slice(&make_dss_block(0, 3, 14, 0x20));
-
-        let (frames, total) = demux_dss(&data).unwrap();
-        assert_eq!(total, 14);
-        assert_eq!(frames.len(), 14);
-        assert!(frames.iter().all(|f| f.len() == DSS_SP_FRAME_SIZE));
-    }
-
-    #[test]
-    fn test_dss_stream_demux_truncated_frame() {
-        let mut data = vec![0u8; 2 * DSS_BLOCK_SIZE];
-        data[0] = 2;
-        data[1..4].copy_from_slice(b"dss");
-        data.extend_from_slice(&make_dss_block(0, 0, 20, 0x30));
-
-        let mut demuxer = DssSpStreamDemuxer::new(2);
-        for chunk in data.chunks(211) {
-            let _ = demuxer.push(chunk).unwrap();
+    fn walk_never_panics_on_garbage() {
+        let mut seed = 0x1234_5678u32;
+        for len in [0usize, 5, 600, 1030, 1536, 3000, 5000] {
+            for codec in [DssCodec::Sp, DssCodec::SpVariableRate, DssCodec::Lp] {
+                let data: Vec<u8> = (0..len)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                        (seed >> 16) as u8
+                    })
+                    .collect();
+                for header_size in [0usize, 1024, 1536] {
+                    let _ = demux_dss_packets(&data, DssLayout { header_size, codec });
+                }
+            }
         }
-
-        let err = demuxer.finish().unwrap_err();
-        assert!(matches!(err, DecodeError::Truncated(_)));
     }
 }

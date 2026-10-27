@@ -15,7 +15,17 @@ vendor/dss-codec/
   A copy of https://github.com/Guillain-RDCDE/dss-codec, a fork of
   https://github.com/hirparak/dss-codec (Kieran Hirpara, with contributions
   from Gaspard Petit, Patrick Domack and others).
-  License: MIT, Copyright (c) 2026 Kieran Hirpara - vendor/dss-codec/LICENSE
+  License: MIT, Copyright (c) 2026 Kieran Hirpara - vendor/dss-codec/LICENSE,
+  except these files, which are ports of FFmpeg code and keep its licence,
+  LGPL-2.1-or-later (each says so in its header):
+  - src/codec/dss_sp.rs: FFmpeg's libavcodec/dss_sp.c (c) 2014 Oleksij
+    Rempel, with Patrick Domack's variable rate SP (format 1) from his fork;
+  - src/demux/dss.rs: the block walk of libavformat/dss.c as Patrick
+    Domack's fork has it (c) 2014 Oleksij Rempel and contributors;
+  - src/codec/g723_1.rs, src/tables/g723_1.rs: FFmpeg's G.723.1 decoder
+    (c) 2006 Benjamin Larsson, (c) 2010 Mohamed Naufal Basheer.
+  The crate built from them is distributed under the LGPL's terms for those
+  files; its source is this repository.
 
 vendor/dss-codec-wasm/
   The wasm-bindgen wrapper around the crate above. Adapted from
@@ -51,6 +61,12 @@ vendor/dss-codec/tests/fixtures/
   A public Grundig DSS-SP sample and the reference WAV produced from it by the
   genuine Grundig decoder, used to check that ours is bit-exact. Copied from
   the dss-codec fork above.
+  olympus-*.dss / olympus-*.ds2: Patrick Domack's FATE samples (FFmpeg fork,
+  release n9.0.2b): ten seconds of "Composed upon Westminster Bridge" by
+  William Wordsworth, read for LibriVox (archive.org item
+  shortpoetry_026_librivox, public domain), encoded with Olympus's ODMS R8
+  encoder in SP, variable rate SP and LP. *.g723pk are the G.723.1 packets of
+  the LP file, and synthetic packets, for the G.723.1 test.
 
 
 Software used but not redistributed here
