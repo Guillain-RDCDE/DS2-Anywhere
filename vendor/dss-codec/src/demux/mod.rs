@@ -1,6 +1,7 @@
 pub mod ds2;
 pub mod dss;
 pub mod grundig;
+pub mod parts;
 
 use crate::crypto::ds2_encrypted::ENCRYPTED_MAGIC;
 use crate::demux::ds2::detect_ds2_format_type;
