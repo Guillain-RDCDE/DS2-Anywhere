@@ -77,6 +77,12 @@ vendor/dss-codec/tests/fixtures/
   olympus-*-empty-lp.*, olympus-sp-empty-qp.ds2: four more of his FATE
   samples, from release n9.0.2c (an empty LP or QP block in front of the
   audio).
+  olympus-sp-qp.ds2, olympus-sp-qp-cut.ds2, olympus-sp-qp-format3.ds2,
+  olympus-sp-qp-format3-first.ds2, olympus-sp-qp-resync.ds2,
+  olympus-qp-qp7.ds2, olympus-qp-qp7-format3.ds2, olympus-qp7-lp.ds2,
+  olympus-qp7-lp-empty109.ds2: nine more of his FATE samples, from the
+  same release, whose block format changes partway (SP then QP, QP then
+  QP7, QP7 then LP; written by R8's DssRawWriter), and his edits of them.
 
 
 Software used but not redistributed here

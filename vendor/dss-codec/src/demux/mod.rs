@@ -81,6 +81,11 @@ pub fn detect_format(data: &[u8]) -> Option<AudioFormat> {
     if data[1..4] == *b"dss" && data[0] == 6 {
         return Some(AudioFormat::GrundigSp);
     }
+    // A file whose block format changes decodes to one buffer at the highest
+    // rate among its parts; its format is that of the first such part.
+    if let Some(format) = parts::mixed_format(data) {
+        return Some(format);
+    }
     let ds2 = data[1..4] == *b"ds2" || data[..4] == ENCRYPTED_MAGIC;
     // SP, variable rate SP and LP, in a DSS file or a DS2 file: the same
     // audio blocks, read the same way.

@@ -49,6 +49,13 @@ decodes every public test vector to the same samples. In it:
 - The codec of a file is that of its first audio block **with frames**: an empty
   block of another format in front (Olympus's R8 writes one) does not decide it.
 - The old DS2 SP path (`ds2_sp.rs`, 12000 Hz) is gone: DS2 SP blocks are DSS blocks.
+- A file whose block format changes partway (Olympus's DssRawWriter writes SP then
+  QP, QP then QP7, QP7 then LP) is decoded part by part, each run of blocks with
+  its own codec, as Patrick's dss-codec ([#28](https://github.com/hirparak/dss-codec/pull/28))
+  splits it (`src/demux/parts.rs`): the format byte counts when byte 3 of the block
+  header is 0xff and the block states frames. The parts at a lower rate are
+  resampled to the highest, so the file is still one buffer, and `AudioBuffer::parts`
+  says where each part is. A file in one format decodes exactly as before.
 
 The FFmpeg ports (`dss_sp.rs`, `demux/dss.rs`) keep FFmpeg's licence, LGPL-2.1-or-later
 ([NOTICE](../NOTICE)).

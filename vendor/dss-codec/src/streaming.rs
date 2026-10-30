@@ -212,6 +212,9 @@ impl StreamingDecoder {
     }
 
     fn finish_active(&mut self) -> Result<Vec<f64>> {
+        if let Some(samples) = self.decode_buffered_mixed()? {
+            return Ok(samples);
+        }
         if matches!(self.format, Some(AudioFormat::Ds2Qp | AudioFormat::Ds2Qp7)) {
             return self.decode_buffered_ds2_qp();
         }
@@ -229,6 +232,9 @@ impl StreamingDecoder {
     }
 
     fn finish_active_lenient(&mut self) -> Result<Vec<f64>> {
+        if let Some(samples) = self.decode_buffered_mixed()? {
+            return Ok(samples);
+        }
         if matches!(self.format, Some(AudioFormat::Ds2Qp | AudioFormat::Ds2Qp7)) {
             return self.decode_buffered_ds2_qp();
         }
@@ -243,6 +249,20 @@ impl StreamingDecoder {
         };
 
         self.decode_frames(frames)
+    }
+
+    /// A file whose block format changes, read whole: each part with its own
+    /// codec, at the highest rate among them, which `format` then reports.
+    fn decode_buffered_mixed(&mut self) -> Result<Option<Vec<f64>>> {
+        if !self.buffers_whole_file() {
+            return Ok(None);
+        }
+        let Some(parts) = crate::decode_mixed_plain(&self.raw_buf)? else {
+            return Ok(None);
+        };
+        let buf = crate::assemble_parts(parts, None, crate::mixed_format_of(&self.raw_buf))?;
+        self.format = Some(buf.format);
+        Ok(Some(buf.samples))
     }
 
     fn decode_buffered_ds2_qp(&mut self) -> Result<Vec<f64>> {
