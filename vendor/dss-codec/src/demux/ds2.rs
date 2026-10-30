@@ -169,6 +169,8 @@ struct QpReader<'a> {
     frame_size: usize,
     /// frames still to start in the current block
     blk_frames: isize,
+    /// the last frame read ran past the end of the data and was zero-filled
+    last_truncated: bool,
 }
 
 impl<'a> QpReader<'a> {
@@ -298,6 +300,7 @@ impl<'a> QpReader<'a> {
             pkt[offset..self.frame_size].fill(0);
             self.counter = 0;
         }
+        self.last_truncated = truncated;
         self.frames_read += 1;
         Some(pkt[..self.frame_size].to_vec())
     }
@@ -331,26 +334,34 @@ pub fn demux_ds2_qp(data: &[u8]) -> Result<Ds2QpPackets> {
         return Err(DecodeError::UnsupportedFormat(format_type));
     }
     let qp7 = format_type == DS2_FORMAT_QP7;
+    let (packets, _) = demux_qp_frames(data, header_size, qp7);
+    Ok(Ds2QpPackets {
+        format_type,
+        packets,
+    })
+}
 
+/// QP or QP7 frames of the audio blocks from `start`, a block boundary, to
+/// the end of `data`, as the reader returns them. Also says whether the last
+/// frame ran past the end of `data` and was zero-filled.
+pub(crate) fn demux_qp_frames(data: &[u8], start: usize, qp7: bool) -> (Vec<Vec<u8>>, bool) {
     let mut reader = QpReader {
         data,
-        pos: header_size,
+        pos: start,
         qp7,
         counter: 0,
-        total_frames: ds2_count_total_frames(data, header_size, qp7),
+        total_frames: ds2_count_total_frames(data, start, qp7),
         frames_read: 0,
         resync_drop: false,
         frame_size: DS2_QP_FRAME_SIZE,
         blk_frames: 0,
+        last_truncated: false,
     };
     let mut packets = Vec::new();
     while let Some(pkt) = reader.read_frame() {
         packets.push(pkt);
     }
-    Ok(Ds2QpPackets {
-        format_type,
-        packets,
-    })
+    (packets, reader.last_truncated)
 }
 
 /// Demux a DS2 QP or QP7 file into one segment of frames, decoded without a

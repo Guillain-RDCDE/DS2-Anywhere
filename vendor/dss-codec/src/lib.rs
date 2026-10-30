@@ -157,33 +157,40 @@ pub fn decode_to_buffer_with_password(data: &[u8], password: Option<&[u8]>) -> R
 /// Decode the plain bytes of a file read by the DSS block walk: SP and
 /// variable rate SP at 11000 Hz, LP at 8000 Hz.
 pub(crate) fn decode_dss_blocks(data: &[u8]) -> Result<Vec<f64>> {
-    use crate::codec::dss_sp::DssSpDecoder;
-    use crate::codec::g723_1::G7231Decoder;
-    use crate::demux::dss::{demux_dss_packets, dss_layout, DssCodec};
+    use crate::demux::dss::{demux_dss_packets, dss_layout};
 
     let layout =
         dss_layout(data).ok_or_else(|| DecodeError::NotDss(std::path::PathBuf::from("<bytes>")))?;
     let packets = demux_dss_packets(data, layout);
+    Ok(decode_dss_packets(layout.codec, &packets))
+}
+
+/// Decode the packets of the DSS block walk with the codec of their blocks.
+fn decode_dss_packets(codec: crate::demux::dss::DssCodec, packets: &[Vec<u8>]) -> Vec<f64> {
+    use crate::codec::dss_sp::DssSpDecoder;
+    use crate::codec::g723_1::G7231Decoder;
+    use crate::demux::dss::DssCodec;
+
     let mut samples = Vec::new();
-    match layout.codec {
+    match codec {
         DssCodec::Sp | DssCodec::SpVariableRate => {
-            let mut decoder = if layout.codec == DssCodec::Sp {
+            let mut decoder = if codec == DssCodec::Sp {
                 DssSpDecoder::new()
             } else {
                 DssSpDecoder::new_variable_rate()
             };
-            for pkt in &packets {
+            for pkt in packets {
                 samples.extend(decoder.decode_frame(pkt).into_iter().map(f64::from));
             }
         }
         DssCodec::Lp => {
             let mut decoder = G7231Decoder::new();
-            for pkt in &packets {
+            for pkt in packets {
                 samples.extend(decoder.decode_frame(pkt).into_iter().map(f64::from));
             }
         }
     }
-    Ok(samples)
+    samples
 }
 
 /// Decode a file and write to WAV with given output configuration.
