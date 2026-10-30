@@ -54,6 +54,10 @@ Patrick has asked to stay off the `ffmpeg-devel` mailing list. The mailing-list 
 
 ---
 
+### ITU-T — Recommendation G.723.1, and the clean room behind our LP decoder
+
+LP recordings carry **G.723.1** frames, an ITU-T standard: the Recommendation, its fixed-point reference and its test vectors are published by the ITU. Our LP decoder ([`vendor/dss-codec/src/codec/g723_1.rs`](vendor/dss-codec/src/codec/g723_1.rs), MIT) was written in a clean room. One side read the Recommendation and the reference and wrote [a specification](docs/g723-1/SPEC.md) with no code in it. The other side wrote the decoder from that and the Recommendation alone, and it matches the ITU test vectors sample for sample. The same decoder went to Kieran's crate in [hirparak/dss-codec#26](https://github.com/hirparak/dss-codec/pull/26). It replaces our earlier port of **FFmpeg's G.723.1 decoder**, by Benjamin Larsson (2006) and Mohamed Naufal Basheer (2010), which served LP here from 27 to 30 October 2026 and was the second reference our new decoder was checked against. The story is [chapter 19](docs/19-the-last-format.md).
+
 ## The supporting cast
 
 ### lamejs ([zhuker](https://github.com/zhuker/lamejs) / [@breezystack/lamejs](https://www.npmjs.com/package/@breezystack/lamejs))

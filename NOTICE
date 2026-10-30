@@ -22,10 +22,15 @@ vendor/dss-codec/
     Rempel, with Patrick Domack's variable rate SP (format 1) from his fork;
   - src/demux/dss.rs: the block walk of libavformat/dss.c as Patrick
     Domack's fork has it (c) 2014 Oleksij Rempel and contributors;
-  - src/codec/g723_1.rs, src/tables/g723_1.rs: FFmpeg's G.723.1 decoder
-    (c) 2006 Benjamin Larsson, (c) 2010 Mohamed Naufal Basheer.
   The crate built from them is distributed under the LGPL's terms for those
   files; its source is this repository.
+  src/codec/g723_1.rs and src/tables/g723_1.rs (the G.723.1 decoder, for LP)
+  are not a port: they are our own clean-room implementation of ITU-T
+  Recommendation G.723.1, MIT, Copyright (c) 2026 Guillain d'Erceville,
+  written from docs/g723-1/SPEC.md and the Recommendation's text (see
+  docs/19-the-last-format.md). Until October 2026 these two files were a
+  port of FFmpeg's G.723.1 decoder (LGPL); that version is in this
+  repository's history only.
 
 vendor/dss-codec-wasm/
   The wasm-bindgen wrapper around the crate above. Adapted from
@@ -67,6 +72,9 @@ vendor/dss-codec/tests/fixtures/
   shortpoetry_026_librivox, public domain), encoded with Olympus's ODMS R8
   encoder in SP, variable rate SP and LP. *.g723pk are the G.723.1 packets of
   the LP file, and synthetic packets, for the G.723.1 test.
+  olympus-*-empty-lp.*, olympus-sp-empty-qp.ds2: four more of his FATE
+  samples, from release n9.0.2c (an empty LP or QP block in front of the
+  audio).
 
 
 Software used but not redistributed here

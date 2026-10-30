@@ -1,657 +1,769 @@
-//! G.723.1 decoder (6.3 / 5.3 kbit/s, SID and untransmitted frames), used by
-//! DSS/DS2 "LP" recordings.
+//! G.723.1 speech decoder (ITU-T Recommendation G.723.1 with Annex A), the
+//! codec of DSS and DS2 LP blocks.
 //!
-//! Port of FFmpeg's g723_1 decoder (libavcodec/g723_1dec.c, g723_1.c and the
-//! celp/acelp helpers it calls), LGPL-2.1-or-later.
-//! Copyright (c) 2006 Benjamin Larsson, (c) 2010 Mohamed Naufal Basheer.
+//! Decodes both rates (6.3 kbit/s MP-MLQ and 5.3 kbit/s ACELP), SID frames
+//! and untransmitted frames with comfort noise, and erased frames with
+//! concealment. Output is 240 samples per 30 ms frame at 8000 Hz.
 //!
-//! The arithmetic is FFmpeg's fixed point, bit for bit: C `int` overflow is
-//! reproduced with wrapping operations, `int16_t` stores with `as i16`
-//! truncation, and the av_sat / av_clip helpers keep their saturation. The
-//! output is pinned against FFmpeg's decoder (postfilter on, its default).
-//!
-//! Every index derived from the bitstream is either validated the way FFmpeg
-//! validates it or read through a bounds-checked accessor, so a corrupt or
-//! truncated packet never panics.
+//! The arithmetic is the Recommendation's 16- and 32-bit fixed point, step
+//! for step: every product, shift and sum saturates or floors exactly where
+//! the reference decoder does, so the output matches the ITU test vectors
+//! sample for sample. The helpers at the top of the file are those
+//! primitives; their names say their width (`add16`, `mac32`, ...).
 
-use crate::tables::g723_1::*;
+use crate::tables::g723_1::{
+    ACB_GAIN_170, ACB_GAIN_85, ACELP_PITCH_GAIN, ACELP_PITCH_LAG_OFFSET, CNG_GAIN_SEGMENT_BASE,
+    CNG_GAIN_SEGMENT_BOUNDS, COSINE, FIXED_GAIN, LSP_DC, LSP_VQ_BAND0, LSP_VQ_BAND1, LSP_VQ_BAND2,
+    MPMLQ_CODEBOOK_SIZE, MPMLQ_COMBINATORIAL, MPMLQ_PULSE_COUNT, NORM_MULTIPLIER,
+    PITCH_POSTFILTER_WEIGHT, POSTFILTER_POLE_WEIGHTS, POSTFILTER_ZERO_WEIGHTS,
+};
 
-const SUBFRAMES: usize = 4;
-const SUBFRAME_LEN: usize = 60;
-const FRAME_LEN: usize = SUBFRAME_LEN * 4;
-const LPC_ORDER: usize = 10;
-const PITCH_MIN: i32 = 18;
-const PITCH_MAX: usize = PITCH_MIN as usize + 127;
-const PITCH_ORDER: usize = 5;
-const GRID_SIZE: usize = 2;
-const PULSE_MAX: usize = 6;
-const GAIN_LEVELS: i32 = 24;
-const CNG_RANDOM_SEED: i32 = 12345;
+/// Samples per frame.
+pub const FRAME_SAMPLES: usize = 240;
+/// Output sample rate in Hz.
+pub const SAMPLE_RATE: u32 = 8000;
 
-/// Samples produced by one G.723.1 frame (30 ms at 8000 Hz).
-pub const G723_1_FRAME_SAMPLES: usize = FRAME_LEN;
-/// Output sample rate.
-pub const G723_1_SAMPLE_RATE: u32 = 8000;
-/// Frame size in bytes for each frame type (low 2 bits of the first byte):
-/// 6.3 kbit/s, 5.3 kbit/s, SID, untransmitted.
-pub const G723_1_FRAME_SIZE: [usize; 4] = [24, 20, 4, 1];
+const SUBFRAME: usize = 60;
+const ORDER: usize = 10;
+/// Excitation history: the longest pitch lag, 18 + 127.
+const HISTORY: usize = 145;
+const LAG_MIN: i16 = 18;
+/// Largest lag the classifier and the pitch postfilter search around.
+const LAG_SEARCH_MAX: i16 = 142;
+/// Below this even lag, 6.3 kbit/s gains use the 85-entry book and may carry
+/// a pulse train bit.
+const SHORT_LAG: i16 = 58;
+const CNG_SEED: i16 = 12345;
 
-const AUDIO_LEN: usize = FRAME_LEN + LPC_ORDER + PITCH_MAX + 4;
-const EXC_LEN: usize = PITCH_MAX + FRAME_LEN + 4;
-
-const DC_LSP: [i16; LPC_ORDER] = [
-    0x0c3b, 0x1271, 0x1e0a, 0x2a36, 0x3630, 0x406f, 0x4d28, 0x56f4, 0x638c, 0x6c46,
-];
-
-const PULSES: [usize; 4] = [6, 5, 6, 5];
-
-/// Postfilter gain weighting factors scaled by 2^15
-const PPF_GAIN_WEIGHT: [i16; 2] = [0x1800, 0x2000];
-
-const PITCH_CONTRIB: [i16; 340] = [
-    60, 0, 0, 2489, 60, 0, 0, 5217, 1, 6171, 0, 3953, 0, 10364, 1, 9357, -1, 8843, 1, 9396, 0,
-    5794, -1, 10816, 2, 11606, -2, 12072, 0, 8616, 1, 12170, 0, 14440, 0, 7787, -1, 13721, 0,
-    18205, 0, 14471, 0, 15807, 1, 15275, 0, 13480, -1, 18375, -1, 0, 1, 11194, -1, 13010, 1, 18836,
-    -2, 20354, 1, 16233, -1, 0, 60, 0, 0, 12130, 0, 13385, 1, 17834, 1, 20875, 0, 21996, 1, 0, 1,
-    18277, -1, 21321, 1, 13738, -1, 19094, -1, 20387, -1, 0, 0, 21008, 60, 0, -2, 22807, 0, 15900,
-    1, 0, 0, 17989, -1, 22259, 1, 24395, 1, 23138, 0, 23948, 1, 22997, 2, 22604, -1, 25942, 0,
-    26246, 1, 25321, 0, 26423, 0, 24061, 0, 27247, 60, 0, -1, 25572, 1, 23918, 1, 25930, 2, 26408,
-    -1, 19049, 1, 27357, -1, 24538, 60, 0, -1, 25093, 0, 28549, 1, 0, 0, 22793, -1, 25659, 0,
-    29377, 0, 30276, 0, 26198, 1, 22521, -1, 28919, 0, 27384, 1, 30162, -1, 0, 0, 24237, -1, 30062,
-    0, 21763, 1, 30917, 60, 0, 0, 31284, 0, 29433, 1, 26821, 1, 28655, 0, 31327, 2, 30799, 1,
-    31389, 0, 32322, 1, 31760, -2, 31830, 0, 26936, -1, 31180, 1, 30875, 0, 27873, -1, 30429, 1,
-    31050, 0, 0, 0, 31912, 1, 31611, 0, 31565, 0, 25557, 0, 31357, 60, 0, 1, 29536, 1, 28985, -1,
-    26984, -1, 31587, 2, 30836, -2, 31133, 0, 30243, -1, 30742, -1, 32090, 60, 0, 2, 30902, 60, 0,
-    0, 30027, 0, 29042, 60, 0, 0, 31756, 0, 24553, 0, 25636, -2, 30501, 60, 0, -1, 29617, 0, 30649,
-    60, 0, 0, 29274, 2, 30415, 0, 27480, 0, 31213, -1, 28147, 0, 30600, 1, 31652, 2, 29068, 60, 0,
-    1, 28571, 1, 28730, 1, 31422, 0, 28257, 0, 24797, 60, 0, 0, 0, 60, 0, 0, 22105, 0, 27852, 60,
-    0, 60, 0, -1, 24214, 0, 24642, 0, 23305, 60, 0, 60, 0, 1, 22883, 0, 21601, 60, 0, 2, 25650, 60,
-    0, -2, 31253, -2, 25144, 0, 17998,
-];
-
-/// Size of the MP-MLQ fixed excitation codebooks
-const MAX_POS: [i32; 4] = [593775, 142506, 593775, 142506];
-
-/// 0.65^i (zero part) and 0.75^i (pole part) scaled by 2^15
-const POSTFILTER_TBL: [[i16; LPC_ORDER]; 2] = [
-    [21299, 13844, 8999, 5849, 3802, 2471, 1606, 1044, 679, 441],
-    [
-        24576, 18432, 13824, 10368, 7776, 5832, 4374, 3281, 2460, 1845,
-    ],
-];
-
-const CNG_ADAPTIVE_CB_LAG: [i32; 4] = [1, 0, 1, 3];
-const CNG_FILT: [i32; 4] = [273, 998, 499, 333];
-const CNG_BSEG: [i32; 3] = [2048, 18432, 231233];
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum FrameType {
-    Active,
-    Sid,
-    Untransmitted,
+/// Size in bytes of a frame whose first byte is `first_byte`, from the frame
+/// type in its two low bits: 24 for 6.3 kbit/s, 20 for 5.3 kbit/s, 4 for a
+/// SID frame and 1 for an untransmitted frame.
+pub fn frame_size(first_byte: u8) -> usize {
+    match first_byte & 3 {
+        0 => 24,
+        1 => 20,
+        2 => 4,
+        _ => 1,
+    }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Rate {
-    R6300 = 0,
-    R5300 = 1,
+// --- Fixed-point primitives ------------------------------------------------
+
+fn sat16(v: i32) -> i16 {
+    v.clamp(i16::MIN.into(), i16::MAX.into()) as i16
 }
 
-#[derive(Clone, Copy, Default, Debug)]
-struct Subframe {
-    ad_cb_lag: i32,
-    ad_cb_gain: i32,
-    dirac_train: i32,
-    pulse_sign: i32,
-    grid_index: i32,
-    amp_index: i32,
-    pulse_pos: i32,
+fn sat32(v: i64) -> i32 {
+    v.clamp(i32::MIN.into(), i32::MAX.into()) as i32
 }
 
-#[derive(Clone, Copy, Default)]
-struct PpfParam {
-    index: i32,
-    opt_gain: i16,
-    sc_gain: i16,
+fn add16(a: i16, b: i16) -> i16 {
+    sat16(i32::from(a) + i32::from(b))
 }
 
-// ---------------------------------------------------------------------------
-// FFmpeg arithmetic helpers
-// ---------------------------------------------------------------------------
-
-#[inline]
-fn clip_i16(a: i32) -> i16 {
-    a.clamp(-32768, 32767) as i16
+fn sub16(a: i16, b: i16) -> i16 {
+    sat16(i32::from(a) - i32::from(b))
 }
 
-#[inline]
-fn clipl_i32(a: i64) -> i32 {
-    a.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+fn neg16(a: i16) -> i16 {
+    a.checked_neg().unwrap_or(i16::MAX)
 }
 
-#[inline]
-fn sat_add32(a: i32, b: i32) -> i32 {
-    clipl_i32(a as i64 + b as i64)
+fn abs16(a: i16) -> i16 {
+    a.checked_abs().unwrap_or(i16::MAX)
 }
 
-#[inline]
-fn sat_dadd32(a: i32, b: i32) -> i32 {
-    sat_add32(a, sat_add32(b, b))
+/// a * b / 2^15, floored.
+fn mul16(a: i16, b: i16) -> i16 {
+    sat16((i32::from(a) * i32::from(b)) >> 15)
 }
 
-/// av_log2 (log2 of 0 is 0).
-#[inline]
-fn av_log2(v: u32) -> i32 {
-    31 - (v | 1).leading_zeros() as i32
+/// a * b / 2^15, rounded.
+fn mul16r(a: i16, b: i16) -> i16 {
+    sat16((i32::from(a) * i32::from(b) + 0x4000) >> 15)
 }
 
-/// C division where FFmpeg never divides by zero on a valid path; a zero
-/// divisor (corrupt input only) yields 0 instead of trapping.
-#[inline]
-fn div(a: i32, b: i32) -> i32 {
-    if b == 0 {
+fn shl16(a: i16, n: i16) -> i16 {
+    if n < 0 {
+        return shr16(a, n.saturating_neg());
+    }
+    if n > 15 {
+        return match a {
+            0 => 0,
+            a if a > 0 => i16::MAX,
+            _ => i16::MIN,
+        };
+    }
+    sat16(i32::from(a) << n)
+}
+
+fn shr16(a: i16, n: i16) -> i16 {
+    if n < 0 {
+        return shl16(a, n.saturating_neg());
+    }
+    if n >= 15 {
+        return if a < 0 { -1 } else { 0 };
+    }
+    a >> n
+}
+
+/// Left shifts that bring a non-zero `a` to the range of 2^14 to 2^15.
+fn norm16(a: i16) -> i16 {
+    match a {
+        0 => 0,
+        -1 => 15,
+        _ => {
+            let b = if a < 0 { !a } else { a };
+            b.leading_zeros() as i16 - 1
+        }
+    }
+}
+
+/// a * 2^15 / b for 0 <= a <= b, floored.
+fn div16(a: i16, b: i16) -> i16 {
+    debug_assert!(0 <= a && a <= b && b > 0);
+    if a == 0 {
         0
+    } else if a == b {
+        i16::MAX
     } else {
-        a.wrapping_div(b)
+        ((i32::from(a) << 15) / i32::from(b)) as i16
     }
 }
 
-/// C `a << s` on int with gcc semantics for the shift range FFmpeg uses.
-#[inline]
-fn shl(a: i32, s: i32) -> i32 {
-    a.wrapping_shl(s as u32)
-}
-
-/// C `a >> s` on int (arithmetic).
-#[inline]
-fn shr(a: i32, s: i32) -> i32 {
-    a.wrapping_shr(s as u32)
-}
-
-/// ff_sqrt from libavcodec/mathops.h (CONFIG_SMALL off).
-fn ff_sqrt(a: u32) -> u32 {
-    if a < 255 {
-        return (SQRT_TAB[(a + 1) as usize] as u32).wrapping_sub(1) >> 4;
-    }
-    let b: u32 = if a < (1 << 12) {
-        (SQRT_TAB[(a >> 4) as usize] as u32) >> 2
-    } else if a < (1 << 14) {
-        (SQRT_TAB[(a >> 6) as usize] as u32) >> 1
-    } else if a < (1 << 16) {
-        SQRT_TAB[(a >> 8) as usize] as u32
+fn lmul(a: i16, b: i16) -> i32 {
+    if a == i16::MIN && b == i16::MIN {
+        i32::MAX
     } else {
-        let s = av_log2(a >> 16) >> 1;
-        let c = a >> (s + 2);
-        let t = SQRT_TAB.get((c >> (s + 8)) as usize).copied().unwrap_or(1) as u32;
-        let t = t.max(1);
-        c / t + (t << s)
-    };
-    b.wrapping_sub((a < b.wrapping_mul(b)) as u32)
-}
-
-/// Bitexact sqrt(val/2), truncated to int16 as FFmpeg's return type does.
-#[inline]
-fn square_root(val: u32) -> i16 {
-    ((ff_sqrt(val.wrapping_shl(1)) >> 1) & !1u32) as i16
-}
-
-/// ff_g723_1_normalize_bits
-#[inline]
-fn normalize_bits(num: i32, width: i32) -> i32 {
-    width - av_log2(num as u32) - 1
-}
-
-/// ff_g723_1_dot_product over `buf[a..a+len]` and `buf2[b..b+len]`.
-/// Out-of-range windows (unreachable from FFmpeg-valid state) give 0.
-fn dot_product(x: &[i16], a: isize, y: &[i16], b: isize, len: usize) -> i32 {
-    if a < 0 || b < 0 {
-        return 0;
+        2 * i32::from(a) * i32::from(b)
     }
-    let (a, b) = (a as usize, b as usize);
-    let (Some(xs), Some(ys)) = (x.get(a..a + len), y.get(b..b + len)) else {
-        return 0;
-    };
-    let sum: i64 = xs.iter().zip(ys).map(|(&p, &q)| p as i64 * q as i64).sum();
-    let sum = sum as i32;
-    sat_add32(sum, sum)
 }
 
-/// ff_g723_1_scale_vector: returns the scale, writes `dst[..len]`.
-fn scale_vector(dst: &mut [i16], vector: &[i16], len: usize) -> i32 {
-    let mut max: i32 = 0;
-    for &v in &vector[..len] {
-        max |= (v as i32).abs();
+fn add32(x: i32, y: i32) -> i32 {
+    x.saturating_add(y)
+}
+
+fn sub32(x: i32, y: i32) -> i32 {
+    x.saturating_sub(y)
+}
+
+fn mac32(x: i32, a: i16, b: i16) -> i32 {
+    add32(x, lmul(a, b))
+}
+
+fn msu32(x: i32, a: i16, b: i16) -> i32 {
+    sub32(x, lmul(a, b))
+}
+
+fn neg32(x: i32) -> i32 {
+    x.checked_neg().unwrap_or(i32::MAX)
+}
+
+fn abs32(x: i32) -> i32 {
+    x.checked_abs().unwrap_or(i32::MAX)
+}
+
+fn shl32(x: i32, n: i16) -> i32 {
+    if n <= 0 {
+        return shr32(x, n.saturating_neg());
     }
-    let bits = (14 - av_log2(max as u32)).max(0);
-    for i in 0..len {
-        dst[i] = (shl(vector[i] as i32, bits) >> 3) as i16;
+    if n >= 32 {
+        return match x {
+            0 => 0,
+            x if x > 0 => i32::MAX,
+            _ => i32::MIN,
+        };
     }
-    bits - 3
+    sat32(i64::from(x) << n)
 }
 
-/// ff_acelp_weighted_vector_sum (one element).
-#[inline]
-fn weighted(a: i16, b: i16, wa: i16, wb: i16, rounder: i16, shift: i32) -> i16 {
-    let s = (a as i32)
-        .wrapping_mul(wa as i32)
-        .wrapping_add((b as i32).wrapping_mul(wb as i32))
-        .wrapping_add(rounder as i32);
-    clip_i16(s >> shift)
-}
-
-/// MULL2: bitexact 2ab scaled by 1/2^16 (C int arithmetic).
-#[inline]
-fn mull2(a: i32, b: i32) -> i32 {
-    (a >> 16)
-        .wrapping_mul(b)
-        .wrapping_mul(2)
-        .wrapping_add(((a & 0xffff).wrapping_mul(b)) >> 15)
-}
-
-// ---------------------------------------------------------------------------
-// LSP handling (g723_1.c)
-// ---------------------------------------------------------------------------
-
-fn lsp2lpc(lpc: &mut [i16]) {
-    let mut f1 = [0i32; LPC_ORDER / 2 + 1];
-    let mut f2 = [0i32; LPC_ORDER / 2 + 1];
-
-    for v in lpc.iter_mut().take(LPC_ORDER) {
-        let index = ((*v >> 7) & 0x1ff) as usize;
-        let offset = (*v & 0x7f) as i32;
-        let c0 = COS_TAB[index] as i32;
-        let c1 = COS_TAB[index + 1] as i32;
-        let temp1 = c0.wrapping_mul(1 << 16);
-        let temp2 = (c1 - c0).wrapping_mul(((offset << 8) + 0x80) << 1);
-        *v = (sat_dadd32(1 << 15, temp1.wrapping_add(temp2)) >> 16).wrapping_neg() as i16;
+fn shr32(x: i32, n: i16) -> i32 {
+    if n < 0 {
+        return shl32(x, n.saturating_neg());
     }
+    if n >= 31 {
+        return if x < 0 { -1 } else { 0 };
+    }
+    x >> n
+}
 
-    let l = |k: usize| lpc[k] as i32;
-    f1[0] = 1 << 28;
-    f1[1] = (l(0) + l(2)).wrapping_mul(1 << 14);
-    f1[2] = l(0).wrapping_mul(l(2)).wrapping_add(2 << 28);
-    f2[0] = 1 << 28;
-    f2[1] = (l(1) + l(3)).wrapping_mul(1 << 14);
-    f2[2] = l(1).wrapping_mul(l(3)).wrapping_add(2 << 28);
+fn hi16(x: i32) -> i16 {
+    (x >> 16) as i16
+}
 
-    for i in 2..LPC_ORDER / 2 {
-        let a = l(2 * i);
-        let b = l(2 * i + 1);
-        f1[i + 1] = clipl_i32(f1[i - 1] as i64 + mull2(f1[i], a) as i64);
-        f2[i + 1] = clipl_i32(f2[i - 1] as i64 + mull2(f2[i], b) as i64);
-        let mut j = i;
-        while j >= 2 {
-            f1[j] = mull2(f1[j - 1], a)
-                .wrapping_add(f1[j] >> 1)
-                .wrapping_add(f1[j - 2] >> 1);
-            f2[j] = mull2(f2[j - 1], b)
-                .wrapping_add(f2[j] >> 1)
-                .wrapping_add(f2[j - 2] >> 1);
-            j -= 1;
+fn lo16(x: i32) -> i16 {
+    x as i16
+}
+
+fn dep_hi(a: i16) -> i32 {
+    i32::from(a) << 16
+}
+
+fn round16(x: i32) -> i16 {
+    hi16(add32(x, 0x8000))
+}
+
+/// Left shifts that bring a non-zero `x` to the range of 2^30 to 2^31.
+fn norm32(x: i32) -> i16 {
+    match x {
+        0 => 0,
+        -1 => 31,
+        _ => {
+            let b = if x < 0 { !x } else { x };
+            b.leading_zeros() as i16 - 1
         }
-        f1[0] >>= 1;
-        f2[0] >>= 1;
-        f1[1] = (shr(a.wrapping_mul(65536), i as i32).wrapping_add(f1[1])) >> 1;
-        f2[1] = (shr(b.wrapping_mul(65536), i as i32).wrapping_add(f2[1])) >> 1;
-    }
-
-    for i in 0..LPC_ORDER / 2 {
-        let ff1 = f1[i + 1].wrapping_add(f1[i]) as i64;
-        let ff2 = f2[i + 1].wrapping_sub(f2[i]) as i64;
-        lpc[i] = (clipl_i32((ff1 + ff2) * 8 + (1 << 15)) >> 16) as i16;
-        lpc[LPC_ORDER - i - 1] = (clipl_i32((ff1 - ff2) * 8 + (1 << 15)) >> 16) as i16;
     }
 }
 
-fn lsp_interpolate(lpc: &mut [i16; SUBFRAMES * LPC_ORDER], cur: &[i16; 10], prev: &[i16; 10]) {
-    for i in 0..LPC_ORDER {
-        lpc[i] = weighted(cur[i], prev[i], 4096, 12288, 1 << 13, 14);
-        lpc[LPC_ORDER + i] = weighted(cur[i], prev[i], 8192, 8192, 1 << 13, 14);
-        lpc[2 * LPC_ORDER + i] = weighted(cur[i], prev[i], 12288, 4096, 1 << 13, 14);
-    }
-    lpc[3 * LPC_ORDER..].copy_from_slice(cur);
-    for chunk in lpc.chunks_mut(LPC_ORDER) {
-        lsp2lpc(chunk);
-    }
+/// About x * v / 2^15: the unsigned low half and the signed high half of x
+/// are multiplied apart, which the reference does and a plain product does
+/// not reproduce.
+fn mul32x16(x: i32, v: i16) -> i32 {
+    let lo = x & 0xffff;
+    let t = (lo * i32::from(v)) >> 15;
+    mac32(t, v, hi16(x))
 }
 
-fn inverse_quant(prev_lsp: &[i16; 10], lsp_index: &mut [u8; 3], bad_frame: bool) -> [i16; 10] {
-    let (min_dist, pred) = if !bad_frame {
-        (0x100, 12288)
+/// n / (2 * d) for n >= 0 and d > 0, at most 32767.
+fn div32x16(n: i32, d: i16) -> i16 {
+    debug_assert!(n >= 0 && d > 0);
+    if n >= dep_hi(d) {
+        i16::MAX
     } else {
-        *lsp_index = [0; 3];
-        (0x200, 23552)
-    };
-    let b0 = &LSP_BAND0[lsp_index[0] as usize];
-    let b1 = &LSP_BAND1[lsp_index[1] as usize];
-    let b2 = &LSP_BAND2[lsp_index[2] as usize];
-    let mut cur: [i16; 10] = [
-        b0[0], b0[1], b0[2], b1[0], b1[1], b1[2], b2[0], b2[1], b2[2], b2[3],
-    ];
+        (n / (2 * i32::from(d))) as i16
+    }
+}
 
-    for i in 0..LPC_ORDER {
-        let temp = ((prev_lsp[i] as i32 - DC_LSP[i] as i32) * pred + (1 << 14)) >> 15;
-        cur[i] = (cur[i] as i32 + DC_LSP[i] as i32 + temp) as i16;
+/// Greatest r with bit 0 clear and 2 * r * r <= n, its bits chosen from the
+/// top.
+fn isqrt(n: i32) -> i16 {
+    let mut r: i16 = 0;
+    for k in (1..=14).rev() {
+        let t = add16(r, 1 << k);
+        if n >= lmul(t, t) {
+            r = t;
+        }
+    }
+    r
+}
+
+fn rand16(seed: &mut i16) -> i16 {
+    let w = i32::from(*seed as u16) * 521 + 259;
+    *seed = lo16(w);
+    *seed
+}
+
+/// Scales `v` in place so its largest magnitude reaches 2^11 to 2^12 and
+/// returns the shift that was applied, minus 3.
+fn vnorm(v: &mut [i16]) -> i16 {
+    let max = v.iter().fold(0, |m, &x| m.max(abs16(x)));
+    let z = norm16(max);
+    let multiplier = NORM_MULTIPLIER[z as usize];
+    for x in v.iter_mut() {
+        *x = lo16(shr32(lmul(multiplier, *x), 4));
+    }
+    z - 3
+}
+
+/// Sum of a[j] * b[j] with saturation at every step.
+fn dot(a: &[i16], b: &[i16]) -> i32 {
+    a.iter().zip(b).fold(0, |acc, (&x, &y)| mac32(acc, x, y))
+}
+
+// --- Bitstream -------------------------------------------------------------
+
+/// Reads fields from a frame, each from its least significant bit up. Bits
+/// past the end of the frame read as 0.
+struct BitReader<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl BitReader<'_> {
+    fn read(&mut self, width: usize) -> i32 {
+        let mut value = 0;
+        for t in 0..width {
+            let bit = self
+                .data
+                .get(self.pos / 8)
+                .map_or(0, |byte| (byte >> (self.pos % 8)) & 1);
+            value |= i32::from(bit) << t;
+            self.pos += 1;
+        }
+        value
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Rate {
+    High,
+    Low,
+}
+
+/// Parameters of a good active frame.
+#[derive(Debug, PartialEq, Eq)]
+struct Active {
+    rate: Rate,
+    lsp: i32,
+    /// Even lag of subframes 0 and 1, then of subframes 2 and 3.
+    lag: [i16; 2],
+    /// Lag delta of each subframe; 1 for the even subframes.
+    delta: [i16; 4],
+    /// Adaptive codebook gain index.
+    acb_gain: [usize; 4],
+    /// Fixed codebook gain index.
+    fcb_gain: [usize; 4],
+    train: [bool; 4],
+    grid: [usize; 4],
+    pos: [i32; 4],
+    sign: [i32; 4],
+}
+
+impl Active {
+    fn even_lag(&self, subframe: usize) -> i16 {
+        self.lag[subframe / 2]
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Frame {
+    Active(Active),
+    Sid {
+        lsp: i32,
+        gain: i16,
+    },
+    Untransmitted,
+    /// Erased, or an active frame with a forbidden lag or gain code.
+    Bad,
+}
+
+fn parse(data: &[u8]) -> Frame {
+    let mut bits = BitReader { data, pos: 0 };
+    let rate = match bits.read(2) {
+        0 => Rate::High,
+        1 => Rate::Low,
+        2 => {
+            let lsp = bits.read(24);
+            let gain = bits.read(6) as i16;
+            return Frame::Sid { lsp, gain };
+        }
+        _ => return Frame::Untransmitted,
+    };
+    let lsp = bits.read(24);
+
+    let code = bits.read(7);
+    if code > 123 {
+        return Frame::Bad;
+    }
+    let lag0 = code as i16 + LAG_MIN;
+    let delta1 = bits.read(2) as i16;
+    let code = bits.read(7);
+    if code > 123 {
+        return Frame::Bad;
+    }
+    let lag2 = code as i16 + LAG_MIN;
+    let delta3 = bits.read(2) as i16;
+
+    let mut frame = Active {
+        rate,
+        lsp,
+        lag: [lag0, lag2],
+        delta: [1, delta1, 1, delta3],
+        acb_gain: [0; 4],
+        fcb_gain: [0; 4],
+        train: [false; 4],
+        grid: [0; 4],
+        pos: [0; 4],
+        sign: [0; 4],
+    };
+
+    for i in 0..4 {
+        let mut gain = bits.read(12);
+        let mut bound = 170;
+        if rate == Rate::High && frame.even_lag(i) < SHORT_LAG {
+            frame.train[i] = gain >> 11 != 0;
+            gain &= 0x7ff;
+            bound = 85;
+        }
+        frame.acb_gain[i] = (gain / 24) as usize;
+        frame.fcb_gain[i] = (gain % 24) as usize;
+        if frame.acb_gain[i] >= bound {
+            return Frame::Bad;
+        }
+    }
+    for grid in &mut frame.grid {
+        *grid = bits.read(1) as usize;
     }
 
-    let mut stable = false;
-    for _ in 0..LPC_ORDER {
-        cur[0] = cur[0].max(0x180);
-        cur[LPC_ORDER - 1] = cur[LPC_ORDER - 1].min(0x7e00);
-        for j in 1..LPC_ORDER {
-            let mut temp = min_dist + cur[j - 1] as i32 - cur[j] as i32;
-            if temp > 0 {
-                temp >>= 1;
-                cur[j - 1] = (cur[j - 1] as i32 - temp) as i16;
-                cur[j] = (cur[j] as i32 + temp) as i16;
+    if rate == Rate::High {
+        bits.read(1);
+        let msb = bits.read(13);
+        let (q, s) = (msb / 90, msb % 90);
+        let high = [q / 9, q % 9, s / 9, s % 9];
+        for (i, &width) in [16, 14, 16, 14].iter().enumerate() {
+            frame.pos[i] = (high[i] << width) + bits.read(width);
+        }
+        for (i, width) in [6, 5, 6, 5].into_iter().enumerate() {
+            frame.sign[i] = bits.read(width);
+        }
+    } else {
+        for pos in &mut frame.pos {
+            *pos = bits.read(12);
+        }
+        for sign in &mut frame.sign {
+            *sign = bits.read(4);
+        }
+    }
+    Frame::Active(frame)
+}
+
+// --- LSP decoding and LPC conversion ----------------------------------------
+
+/// Inverse-quantizes the LSP index against the previous vector. A bad frame
+/// uses index 0 with a stronger predictor and a wider spacing.
+fn decode_lsp(index: i32, prev: &[i16; ORDER], bad: bool) -> [i16; ORDER] {
+    let (index, predictor, spacing) = if bad {
+        (0, 23552, 512)
+    } else {
+        (index, 12288, 256)
+    };
+    let band0 = &LSP_VQ_BAND0[((index >> 16) & 0xff) as usize];
+    let band1 = &LSP_VQ_BAND1[((index >> 8) & 0xff) as usize];
+    let band2 = &LSP_VQ_BAND2[(index & 0xff) as usize];
+    let mut lsp = [0i16; ORDER];
+    lsp[..3].copy_from_slice(band0);
+    lsp[3..6].copy_from_slice(band1);
+    lsp[6..].copy_from_slice(band2);
+
+    for j in 0..ORDER {
+        let d = sub16(prev[j], LSP_DC[j]);
+        lsp[j] = add16(lsp[j], mul16r(d, predictor));
+        lsp[j] = add16(lsp[j], LSP_DC[j]);
+    }
+
+    for _ in 0..10 {
+        lsp[0] = lsp[0].max(0x180);
+        lsp[ORDER - 1] = lsp[ORDER - 1].min(0x7e00);
+        for j in 1..ORDER {
+            let t = sub16(add16(spacing, lsp[j - 1]), lsp[j]);
+            if t > 0 {
+                let t = shr16(t, 1);
+                lsp[j - 1] = sub16(lsp[j - 1], t);
+                lsp[j] = add16(lsp[j], t);
             }
         }
-        stable = true;
-        for j in 1..LPC_ORDER {
-            let temp = cur[j - 1] as i32 + min_dist - cur[j] as i32 - 4;
-            if temp > 0 {
-                stable = false;
-                break;
-            }
+        let unstable = (1..ORDER).any(|j| sub16(sub16(add16(lsp[j - 1], spacing), 4), lsp[j]) > 0);
+        if !unstable {
+            return lsp;
         }
-        if stable {
+    }
+    *prev
+}
+
+/// One step of the LSP to LPC polynomial recursion, for P or for Q.
+fn polynomial_step(p: &mut [i32; 6], x: i16, m: usize) {
+    p[m + 1] = add32(mul32x16(p[m], x), p[m - 1]);
+    for j in (2..=m).rev() {
+        p[j] = add32(
+            add32(mul32x16(p[j - 1], x), shr32(p[j], 1)),
+            shr32(p[j - 2], 1),
+        );
+    }
+    p[0] = shr32(p[0], 1);
+    p[1] = shr32(add32(shr32(dep_hi(x), m as i16), p[1]), 1);
+}
+
+fn lsp_to_lpc(lsp: &[i16; ORDER]) -> [i16; ORDER] {
+    let mut c = [0i16; ORDER];
+    for (ck, &q) in c.iter_mut().zip(lsp) {
+        let j = shr16(q, 7) as usize;
+        let delta = sub16(COSINE[j + 1], COSINE[j]);
+        let fraction = add16(shl16(q & 0x7f, 8), 0x80);
+        let acc = shl32(mac32(dep_hi(COSINE[j]), delta, fraction), 1);
+        *ck = neg16(round16(acc));
+    }
+
+    let start = |a: i16, b: i16| {
+        [
+            0x1000_0000,
+            mac32(lmul(a, 0x2000), b, 0x2000),
+            add32(shr32(lmul(a, b), 1), 0x2000_0000),
+            0,
+            0,
+            0,
+        ]
+    };
+    let mut p = start(c[0], c[2]);
+    let mut q = start(c[1], c[3]);
+    for m in 2..=4 {
+        polynomial_step(&mut p, c[2 * m], m);
+        polynomial_step(&mut q, c[2 * m + 1], m);
+    }
+
+    let mut a = [0i16; ORDER];
+    for k in 0..5 {
+        let sum = add32(p[k], p[k + 1]);
+        a[k] = neg16(round16(shl32(add32(sub32(sum, q[k]), q[k + 1]), 3)));
+        a[ORDER - 1 - k] = neg16(round16(shl32(sub32(add32(sum, q[k]), q[k + 1]), 3)));
+    }
+    a
+}
+
+/// LPC coefficients of the four subframes, from LSPs interpolated between the
+/// previous frame's vector and this frame's.
+fn subframe_lpc(current: &[i16; ORDER], prev: &[i16; ORDER]) -> [[i16; ORDER]; 4] {
+    let mut lpc = [[0i16; ORDER]; 4];
+    for (i, a) in lpc.iter_mut().enumerate() {
+        let w = (-8192 * (i as i32 + 1)) as i16;
+        let mut q = [0i16; ORDER];
+        for j in 0..ORDER {
+            let acc = msu32(mac32(dep_hi(prev[j]), w, prev[j]), w, current[j]);
+            q[j] = round16(acc);
+        }
+        *a = lsp_to_lpc(&q);
+    }
+    lpc
+}
+
+// --- Excitation ----------------------------------------------------------------
+
+/// Adaptive codebook contribution of the subframe starting at `start` in
+/// `exc`, from the 145 samples before it.
+fn adaptive_vector(
+    exc: &[i16],
+    start: usize,
+    even_lag: i16,
+    delta: i16,
+    gain: usize,
+    short_book: bool,
+) -> [i16; SUBFRAME] {
+    let lag = (even_lag - 1 + delta) as usize;
+    let mut delayed = [0i16; SUBFRAME + 4];
+    delayed[0] = exc[start - lag - 2];
+    delayed[1] = exc[start - lag - 1];
+    for k in 0..SUBFRAME + 2 {
+        delayed[2 + k] = exc[start - lag + k % lag];
+    }
+    let taps = if short_book {
+        &ACB_GAIN_85[gain]
+    } else {
+        &ACB_GAIN_170[gain]
+    };
+    let mut u = [0i16; SUBFRAME];
+    for (n, out) in u.iter_mut().enumerate() {
+        *out = round16(shl32(dot(&delayed[n..n + 5], taps), 1));
+    }
+    u
+}
+
+/// 6.3 kbit/s fixed codebook vector: 5 or 6 pulses on one grid, then a
+/// pulse train at the lag when the gain code asks for it.
+fn mpmlq_vector(frame: &Active, i: usize) -> [i16; SUBFRAME] {
+    let mut v = [0i16; SUBFRAME];
+    if frame.pos[i] >= MPMLQ_CODEBOOK_SIZE[i] {
+        return v;
+    }
+    let gain = FIXED_GAIN[frame.fcb_gain[i]];
+    let mut r = 6 - MPMLQ_PULSE_COUNT[i];
+    let mut code = frame.pos[i];
+    for c in 0..30 {
+        let rest = sub32(code, MPMLQ_COMBINATORIAL[r][c]);
+        if rest >= 0 {
+            code = rest;
+            continue;
+        }
+        r += 1;
+        let negative = (frame.sign[i] >> (6 - r)) & 1 != 0;
+        v[frame.grid[i] + 2 * c] = if negative { neg16(gain) } else { gain };
+        if r == 6 {
             break;
         }
     }
-    if !stable {
-        cur = *prev_lsp;
-    }
-    cur
-}
 
-// ---------------------------------------------------------------------------
-// Excitation (g723_1.c / g723_1dec.c)
-// ---------------------------------------------------------------------------
-
-/// ff_g723_1_gen_acb_excitation; the history is `buf` seen from `base`
-/// (FFmpeg's `prev_excitation` pointer). It may read slightly before `base`
-/// (comfort noise uses lags up to PITCH_MAX), still inside `buf`.
-fn gen_acb_excitation(
-    buf: &[i16],
-    base: usize,
-    pitch_lag: i32,
-    subfrm: &Subframe,
-    rate: Rate,
-) -> [i16; SUBFRAME_LEN] {
-    let mut residual = [0i16; SUBFRAME_LEN + PITCH_ORDER - 1];
-    let lag = pitch_lag + subfrm.ad_cb_lag - 1;
-    let at = |i: isize| -> i16 {
-        if i < 0 {
-            0
-        } else {
-            buf.get(i as usize).copied().unwrap_or(0)
-        }
-    };
-
-    // ff_g723_1_get_residual
-    let mut offset =
-        base as isize + (PITCH_MAX as isize - (PITCH_ORDER / 2) as isize - lag as isize);
-    residual[0] = at(offset);
-    residual[1] = at(offset + 1);
-    offset += 2;
-    let lag_m = lag.max(1) as isize;
-    for i in 2..SUBFRAME_LEN + PITCH_ORDER - 1 {
-        residual[i] = at(offset + (i as isize - 2) % lag_m);
-    }
-
-    let table: &[i16] = if rate == Rate::R6300 && pitch_lag < SUBFRAME_LEN as i32 - 2 {
-        &ADAPTIVE_CB_GAIN85
-    } else {
-        &ADAPTIVE_CB_GAIN170
-    };
-    let start = (subfrm.ad_cb_gain.max(0) as usize).saturating_mul(20);
-    let cb: [i16; PITCH_ORDER] = match table.get(start..start + PITCH_ORDER) {
-        Some(s) => [s[0], s[1], s[2], s[3], s[4]],
-        None => [0; PITCH_ORDER],
-    };
-
-    let mut vector = [0i16; SUBFRAME_LEN];
-    for i in 0..SUBFRAME_LEN {
-        let mut sum: i64 = 0;
-        for k in 0..PITCH_ORDER {
-            sum += residual[i + k] as i64 * cb[k] as i64;
-        }
-        let sum = sum as i32;
-        vector[i] = (sat_dadd32(1 << 15, sat_add32(sum, sum)) >> 16) as i16;
-    }
-    vector
-}
-
-/// ff_g723_1_gen_dirac_train
-fn gen_dirac_train(buf: &mut [i16], pitch_lag: i32) {
-    if pitch_lag <= 0 {
-        return;
-    }
-    let mut vector = [0i16; SUBFRAME_LEN];
-    vector.copy_from_slice(&buf[..SUBFRAME_LEN]);
-    let mut i = pitch_lag as usize;
-    while i < SUBFRAME_LEN {
-        for j in 0..SUBFRAME_LEN - i {
-            buf[i + j] = buf[i + j].wrapping_add(vector[j]);
-        }
-        i += pitch_lag as usize;
-    }
-}
-
-/// gen_fcb_excitation. FFmpeg's 5.3k path may write up to 4 samples past the
-/// subframe (into the next one, which is then cleared, or into padding); a
-/// 64-sample scratch vector keeps that behavior without touching neighbors.
-fn gen_fcb_excitation(subfrm: &Subframe, rate: Rate, pitch_lag: i32, index: usize) -> [i16; 64] {
-    let mut vector = [0i16; 64];
-    let gain_at = |k: i32| FIXED_CB_GAIN.get(k as usize).copied().unwrap_or(0) as i32;
-
-    if rate == Rate::R6300 {
-        if subfrm.pulse_pos >= MAX_POS[index] || subfrm.pulse_pos < 0 {
-            return vector;
-        }
-        let mut j = PULSE_MAX - PULSES[index];
-        let mut temp = subfrm.pulse_pos;
-        let grid = (subfrm.grid_index & 1) as usize;
-        let gain = gain_at(subfrm.amp_index);
-        for i in 0..SUBFRAME_LEN / GRID_SIZE {
-            temp -= COMBINATORIAL_TABLE[j][i];
-            if temp >= 0 {
-                continue;
+    if frame.train[i] {
+        let lag = frame.even_lag(i) as usize;
+        let pulses = v;
+        let mut shift = lag;
+        while shift < SUBFRAME {
+            for n in shift..SUBFRAME {
+                v[n] = add16(v[n], pulses[n - shift]);
             }
-            temp += COMBINATORIAL_TABLE[j][i];
-            j += 1;
-            let v = if subfrm.pulse_sign & (1 << (PULSE_MAX - j)) != 0 {
-                -gain
+            shift += lag;
+        }
+    }
+    v
+}
+
+/// 5.3 kbit/s fixed codebook vector: 4 pulses on one grid, then recursive
+/// pitch sharpening.
+fn acelp_vector(frame: &Active, i: usize) -> [i16; SUBFRAME] {
+    let mut w = [0i16; SUBFRAME + 4];
+    let gain = FIXED_GAIN[frame.fcb_gain[i]];
+    for k in 0..4 {
+        let slot = ((frame.pos[i] >> (3 * k)) & 7) as usize;
+        let positive = (frame.sign[i] >> k) & 1 != 0;
+        w[8 * slot + frame.grid[i] + 2 * k] = if positive { gain } else { neg16(gain) };
+    }
+    let mut v = [0i16; SUBFRAME];
+    v.copy_from_slice(&w[..SUBFRAME]);
+
+    let acb = frame.acb_gain[i];
+    let lag = frame.even_lag(i) - 1 + frame.delta[i] + ACELP_PITCH_LAG_OFFSET[acb];
+    if lag < SHORT_LAG {
+        let lag = lag as usize;
+        for n in lag..SUBFRAME {
+            v[n] = add16(v[n], mul16(v[n - lag], ACELP_PITCH_GAIN[acb]));
+        }
+    }
+    v
+}
+
+/// Pitch postfilter of one subframe: lag, gain of the delayed signal and
+/// gain of the current one.
+struct PitchPostfilter {
+    lag: isize,
+    delayed_gain: i16,
+    gain: i16,
+}
+
+impl PitchPostfilter {
+    const OFF: Self = Self {
+        lag: 0,
+        delayed_gain: 0,
+        gain: i16::MAX,
+    };
+
+    /// Searches the normalised excitation `xn` around `even_lag` backward
+    /// and forward from the subframe starting at `b`.
+    fn search(xn: &[i16; HISTORY + FRAME_SAMPLES], b: usize, even_lag: i16, rate: Rate) -> Self {
+        let lag = even_lag.min(LAG_SEARCH_MAX) as usize;
+        let current = &xn[b..b + SUBFRAME];
+        let subframe_end = b - HISTORY + SUBFRAME;
+
+        let (mut back_lag, mut back_corr) = (0usize, 0);
+        let (mut fwd_lag, mut fwd_corr) = (0usize, 0);
+        for t in lag - 3..=lag + 3 {
+            let c = dot(current, &xn[b - t..b - t + SUBFRAME]);
+            if c > back_corr {
+                back_corr = c;
+                back_lag = t;
+            }
+        }
+        for t in lag - 3..=lag + 3 {
+            let c = if subframe_end + t <= FRAME_SAMPLES {
+                dot(current, &xn[b + t..b + t + SUBFRAME])
             } else {
-                gain
+                0
             };
-            vector[grid + GRID_SIZE * i] = v as i16;
-            if j == PULSE_MAX {
-                break;
+            if c > fwd_corr {
+                fwd_corr = c;
+                fwd_lag = t;
             }
         }
-        if subfrm.dirac_train == 1 {
-            gen_dirac_train(&mut vector, pitch_lag);
-        }
-    } else {
-        let cb_gain = gain_at(subfrm.amp_index);
-        let cb_shift = (subfrm.grid_index & 1) as usize;
-        let mut cb_sign = subfrm.pulse_sign;
-        let mut cb_pos = subfrm.pulse_pos;
-        let mut i = 0;
-        while i < 8 {
-            let offset = (((cb_pos & 7) as usize) << 3) + cb_shift + i;
-            vector[offset] = if cb_sign & 1 != 0 { cb_gain } else { -cb_gain } as i16;
-            cb_pos >>= 3;
-            cb_sign >>= 1;
-            i += 2;
+        if back_lag == 0 && fwd_lag == 0 {
+            return Self::OFF;
         }
 
-        // Enhance harmonic components
-        let gi = (subfrm.ad_cb_gain.max(0) as usize) << 1;
-        let contrib = |k: usize| PITCH_CONTRIB.get(k).copied().unwrap_or(60) as i32;
-        let lag = contrib(gi) + pitch_lag + subfrm.ad_cb_lag - 1;
-        let beta = contrib(gi + 1);
-        if lag > 0 && lag < SUBFRAME_LEN as i32 - 2 {
-            let lag = lag as usize;
-            for i in lag..SUBFRAME_LEN {
-                let add = beta.wrapping_mul(vector[i - lag] as i32) >> 15;
-                vector[i] = (vector[i] as i32).wrapping_add(add) as i16;
-            }
+        let mut v = [0i32; 5];
+        v[0] = dot(current, current);
+        if back_lag != 0 {
+            let past = &xn[b - back_lag..b - back_lag + SUBFRAME];
+            v[1] = dot(current, past);
+            v[2] = dot(past, past);
         }
-    }
-    vector
-}
-
-/// autocorr_max over `buf` seen from `pos`.
-fn autocorr_max(
-    buf: &[i16],
-    pos: usize,
-    offset: i32,
-    ccr_max: &mut i32,
-    pitch_lag: i32,
-    length: usize,
-    dir: i32,
-) -> i32 {
-    let mut lag = 0;
-    let pitch_lag = pitch_lag.min(PITCH_MAX as i32 - 3);
-    let limit = if dir > 0 {
-        (FRAME_LEN as i32 + PITCH_MAX as i32 - offset - length as i32).min(pitch_lag + 3)
-    } else {
-        pitch_lag + 3
-    };
-    let mut i = pitch_lag - 3;
-    while i <= limit {
-        let ccr = dot_product(
-            buf,
-            pos as isize,
-            buf,
-            pos as isize + (dir * i) as isize,
-            length,
-        );
-        if ccr > *ccr_max {
-            *ccr_max = ccr;
-            lag = i;
+        if fwd_lag != 0 {
+            let ahead = &xn[b + fwd_lag..b + fwd_lag + SUBFRAME];
+            v[3] = dot(current, ahead);
+            v[4] = dot(ahead, ahead);
         }
-        i += 1;
-    }
-    lag
-}
+        let max = v.iter().fold(0, |m, &x| m.max(x));
+        let shift = norm32(max);
+        let w = v.map(|x| hi16(shl32(x, shift)));
 
-fn comp_ppf_gains(lag: i32, rate: Rate, tgt_eng: i32, ccr: i32, res_eng: i32) -> PpfParam {
-    let w = PPF_GAIN_WEIGHT[rate as usize] as i32;
-    let mut ppf = PpfParam {
-        index: lag,
-        ..Default::default()
-    };
-
-    let temp1 = tgt_eng.wrapping_mul(res_eng) >> 1;
-    let temp2 = shl(ccr.wrapping_mul(ccr), 1);
-
-    if temp2 > temp1 {
-        if ccr >= res_eng {
-            ppf.opt_gain = w as i16;
+        let backward = if back_lag == 0 {
+            false
+        } else if fwd_lag == 0 {
+            true
         } else {
-            ppf.opt_gain = (div(shl(ccr, 15), res_eng).wrapping_mul(w) >> 15) as i16;
-        }
-        let og = ppf.opt_gain as i32;
-        let temp1 = shl(tgt_eng, 15).wrapping_add(shl(ccr.wrapping_mul(og), 1));
-        let temp2 = (og.wrapping_mul(og) >> 15).wrapping_mul(res_eng);
-        let pf_residual = sat_add32(temp1, temp2.wrapping_add(1 << 15)) >> 16;
-
-        let t = if tgt_eng >= shl(pf_residual, 1) {
-            0x7fff
-        } else {
-            div(shl(tgt_eng, 14), pf_residual)
+            let a = lmul(mul16r(w[1], w[1]), w[4]);
+            let c = lmul(mul16r(w[3], w[3]), w[2]);
+            a > c
         };
-        ppf.sc_gain = square_root(shl(t, 16) as u32);
-    } else {
-        ppf.opt_gain = 0;
-        ppf.sc_gain = 0x7fff;
+        let (lag, corr, energy) = if backward {
+            (-(back_lag as isize), w[1], w[2])
+        } else {
+            (fwd_lag as isize, w[3], w[4])
+        };
+        Self::gains(lag, w[0], corr, energy, rate)
     }
 
-    ppf.opt_gain = clip_i16((ppf.opt_gain as i32).wrapping_mul(ppf.sc_gain as i32) >> 15);
-    ppf
-}
-
-fn sid_gain_to_lsp_index(gain: i32) -> i32 {
-    if gain < 0x10 {
-        gain << 6
-    } else if gain < 0x20 {
-        (gain - 8) << 7
-    } else {
-        (gain - 20) << 8
-    }
-}
-
-#[inline]
-fn cng_rand(state: &mut i32, base: i32) -> i32 {
-    *state = (state.wrapping_mul(521).wrapping_add(259)) & 0xFFFF;
-    ((*state & 0x7FFF) * base) >> 15
-}
-
-/// Minimal LSB-first bit reader (FFmpeg BITSTREAM_READER_LE); reads past the
-/// end return zero bits.
-struct BitReaderLe<'a> {
-    buf: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> BitReaderLe<'a> {
-    fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0 }
-    }
-
-    fn get(&mut self, n: u32) -> i32 {
-        let mut v: u32 = 0;
-        for i in 0..n {
-            let p = self.pos + i as usize;
-            let bit = self
-                .buf
-                .get(p >> 3)
-                .map(|b| (b >> (p & 7)) & 1)
-                .unwrap_or(0);
-            v |= (bit as u32) << i;
+    fn gains(lag: isize, ten: i16, corr: i16, energy: i16, rate: Rate) -> Self {
+        let a = shr32(lmul(ten, energy), 2);
+        let b = lmul(corr, corr);
+        if b <= a {
+            return Self { lag, ..Self::OFF };
         }
-        self.pos += n as usize;
-        v as i32
+        let weight = match rate {
+            Rate::High => PITCH_POSTFILTER_WEIGHT[0],
+            Rate::Low => PITCH_POSTFILTER_WEIGHT[1],
+        };
+        let g = if corr >= energy {
+            weight
+        } else {
+            mul16(div16(corr, energy), weight)
+        };
+        let mut acc = shr32(dep_hi(ten), 1);
+        acc = mac32(acc, corr, g);
+        acc = add32(acc, shr32(lmul(energy, mul16(g, g)), 1));
+        let den = round16(acc);
+        let num = shr32(dep_hi(ten), 1);
+        let q = if num >= dep_hi(den) {
+            i16::MAX
+        } else {
+            div32x16(num, den)
+        };
+        let gain = isqrt(dep_hi(q));
+        Self {
+            lag,
+            delayed_gain: mul16(g, gain),
+            gain,
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Decoder
-// ---------------------------------------------------------------------------
+// --- Decoder -------------------------------------------------------------------
 
-/// G.723.1 decoder, mono, bit-exact with FFmpeg's `g723_1` decoder.
-#[derive(Clone)]
+/// Frame kind as the comfort noise logic tracks it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Untransmitted,
+    Active,
+    Sid,
+}
+
+/// G.723.1 decoder state. One decoder decodes one stream of frames in order.
 pub struct G7231Decoder {
     postfilter: bool,
-
-    subframe: [Subframe; 4],
-    cur_frame_type: FrameType,
-    past_frame_type: FrameType,
-    cur_rate: Rate,
-    lsp_index: [u8; 3],
-    pitch_lag: [i32; 2],
-    erased_frames: i32,
-
-    prev_lsp: [i16; LPC_ORDER],
-    sid_lsp: [i16; LPC_ORDER],
-    prev_excitation: [i16; PITCH_MAX],
-    excitation: [i16; EXC_LEN],
-    synth_mem: [i16; LPC_ORDER],
-    fir_mem: [i16; LPC_ORDER],
-    iir_mem: [i32; LPC_ORDER],
-
-    random_seed: i32,
-    cng_random_seed: i32,
-    interp_index: i32,
-    interp_gain: i32,
-    sid_gain: i32,
-    cur_gain: i32,
-    reflection_coef: i32,
-    pf_gain: i32,
-    audio: [i16; AUDIO_LEN],
+    prev_lsp: [i16; ORDER],
+    prev_exc: [i16; HISTORY],
+    synth_mem: [i16; ORDER],
+    pf_fir_mem: [i16; ORDER],
+    pf_iir_mem: [i16; ORDER],
+    tilt: i16,
+    out_gain: i16,
+    erase_count: i16,
+    conceal_gain: i16,
+    conceal_lag: i16,
+    conceal_seed: i16,
+    past_kind: Kind,
+    /// SID gain during comfort noise; after an active frame, the energy of
+    /// its last 120 excitation samples.
+    sid_gain: i16,
+    /// Smoothed comfort noise gain; after an active frame, the shift of the
+    /// energy in `sid_gain`.
+    cur_gain: i16,
+    sid_lsp: [i16; ORDER],
+    cng_seed: i16,
 }
 
 impl Default for G7231Decoder {
@@ -661,795 +773,527 @@ impl Default for G7231Decoder {
 }
 
 impl G7231Decoder {
-    /// New decoder with FFmpeg's defaults (postfilter enabled).
+    /// A decoder with the postfilter on, as the Recommendation's decoder
+    /// runs by default.
     pub fn new() -> Self {
-        let mut d = Self {
-            postfilter: true,
-            subframe: [Subframe::default(); 4],
-            cur_frame_type: FrameType::Active,
-            past_frame_type: FrameType::Sid,
-            cur_rate: Rate::R6300,
-            lsp_index: [0; 3],
-            pitch_lag: [0; 2],
-            erased_frames: 0,
-            prev_lsp: DC_LSP,
-            sid_lsp: DC_LSP,
-            prev_excitation: [0; PITCH_MAX],
-            excitation: [0; EXC_LEN],
-            synth_mem: [0; LPC_ORDER],
-            fir_mem: [0; LPC_ORDER],
-            iir_mem: [0; LPC_ORDER],
-            random_seed: 0,
-            cng_random_seed: CNG_RANDOM_SEED,
-            interp_index: 0,
-            interp_gain: 0,
-            sid_gain: 0,
-            cur_gain: 0,
-            reflection_coef: 0,
-            pf_gain: 1 << 12,
-            audio: [0; AUDIO_LEN],
-        };
-        d.reset();
-        d
+        Self::with_postfilter(true)
     }
 
-    /// Enable or disable the postfilter (FFmpeg option `postfilter`, default on).
-    pub fn set_postfilter(&mut self, on: bool) {
-        self.postfilter = on;
-    }
-
-    /// Flush all state (FFmpeg's flush callback, e.g. after a seek).
-    pub fn reset(&mut self) {
-        let postfilter = self.postfilter;
-        *self = Self {
+    /// A decoder with the postfilter on or off.
+    pub fn with_postfilter(postfilter: bool) -> Self {
+        Self {
             postfilter,
-            subframe: [Subframe::default(); 4],
-            cur_frame_type: FrameType::Active,
-            past_frame_type: FrameType::Sid,
-            cur_rate: Rate::R6300,
-            lsp_index: [0; 3],
-            pitch_lag: [0; 2],
-            erased_frames: 0,
-            prev_lsp: DC_LSP,
-            sid_lsp: DC_LSP,
-            prev_excitation: [0; PITCH_MAX],
-            excitation: [0; EXC_LEN],
-            synth_mem: [0; LPC_ORDER],
-            fir_mem: [0; LPC_ORDER],
-            iir_mem: [0; LPC_ORDER],
-            random_seed: 0,
-            cng_random_seed: CNG_RANDOM_SEED,
-            interp_index: 0,
-            interp_gain: 0,
+            prev_lsp: LSP_DC,
+            prev_exc: [0; HISTORY],
+            synth_mem: [0; ORDER],
+            pf_fir_mem: [0; ORDER],
+            pf_iir_mem: [0; ORDER],
+            tilt: 0,
+            out_gain: 0x1000,
+            erase_count: 0,
+            conceal_gain: 0,
+            conceal_lag: 0,
+            conceal_seed: 0,
+            past_kind: Kind::Active,
             sid_gain: 0,
             cur_gain: 0,
-            reflection_coef: 0,
-            pf_gain: 1 << 12,
-            audio: [0; AUDIO_LEN],
-        };
-    }
-
-    /// Size in bytes of the frame whose first byte is `first_byte`.
-    pub fn frame_size(first_byte: u8) -> usize {
-        G723_1_FRAME_SIZE[(first_byte & 3) as usize]
-    }
-
-    /// Decode one packet (one G.723.1 frame). Returns 240 samples at 8000 Hz,
-    /// or an empty vector when the packet is shorter than its frame type
-    /// requires (FFmpeg skips such packets without output).
-    pub fn decode_frame(&mut self, pkt: &[u8]) -> Vec<i16> {
-        let Some(&first) = pkt.first() else {
-            return Vec::new();
-        };
-        if pkt.len() < Self::frame_size(first) {
-            return Vec::new();
+            sid_lsp: LSP_DC,
+            cng_seed: CNG_SEED,
         }
-        let mut out = vec![0i16; FRAME_LEN];
-        self.decode_into(pkt, &mut out);
+    }
+
+    /// Decodes one frame. Its size is `frame_size(frame[0])`; bytes past the
+    /// end of `frame` read as 0, and an empty frame decodes as erased.
+    pub fn decode_frame(&mut self, frame: &[u8]) -> [i16; FRAME_SAMPLES] {
+        if frame.is_empty() {
+            return self.decode(Frame::Bad);
+        }
+        self.decode(parse(frame))
+    }
+
+    /// Conceals one frame that was lost or arrived damaged.
+    pub fn decode_erased(&mut self) -> [i16; FRAME_SAMPLES] {
+        self.decode(Frame::Bad)
+    }
+
+    fn decode(&mut self, frame: Frame) -> [i16; FRAME_SAMPLES] {
+        let (exc, lpc, kind) = match frame {
+            Frame::Active(active) => {
+                let (exc, lpc) = self.active(Some(&active));
+                (exc, lpc, Kind::Active)
+            }
+            Frame::Bad if self.past_kind == Kind::Active => {
+                let (exc, lpc) = self.active(None);
+                (exc, lpc, Kind::Active)
+            }
+            Frame::Bad | Frame::Untransmitted => {
+                let (exc, lpc) = self.comfort_noise(None);
+                (exc, lpc, Kind::Untransmitted)
+            }
+            Frame::Sid { lsp, gain } => {
+                let (exc, lpc) = self.comfort_noise(Some((lsp, gain)));
+                (exc, lpc, Kind::Sid)
+            }
+        };
+        self.past_kind = kind;
+
+        let mut out = [0i16; FRAME_SAMPLES];
+        for (i, a) in lpc.iter().enumerate() {
+            let range = i * SUBFRAME..(i + 1) * SUBFRAME;
+            let mut y = self.synthesize(&exc[range.clone()], a);
+            if self.postfilter {
+                let energy = self.formant_postfilter(&mut y, a);
+                self.scale_gain(&mut y, energy);
+            }
+            out[range].copy_from_slice(&y);
+        }
         out
     }
 
-    fn unpack_bitstream(&mut self, buf: &[u8]) -> Result<(), ()> {
-        let mut gb = BitReaderLe::new(buf);
-        let info_bits = gb.get(2);
-
-        if info_bits == 3 {
-            self.cur_frame_type = FrameType::Untransmitted;
-            return Ok(());
-        }
-
-        self.lsp_index[2] = gb.get(8) as u8;
-        self.lsp_index[1] = gb.get(8) as u8;
-        self.lsp_index[0] = gb.get(8) as u8;
-
-        if info_bits == 2 {
-            self.cur_frame_type = FrameType::Sid;
-            self.subframe[0].amp_index = gb.get(6);
-            return Ok(());
-        }
-
-        self.cur_rate = if info_bits != 0 {
-            Rate::R5300
+    /// Excitation and LPC of an active frame; `None` conceals an erased one.
+    fn active(&mut self, frame: Option<&Active>) -> ([i16; FRAME_SAMPLES], [[i16; ORDER]; 4]) {
+        self.erase_count = if frame.is_some() {
+            0
         } else {
-            Rate::R6300
+            add16(self.erase_count, 1).min(3)
         };
-        self.cur_frame_type = FrameType::Active;
+        let lsp = decode_lsp(frame.map_or(0, |f| f.lsp), &self.prev_lsp, frame.is_none());
+        let lpc = subframe_lpc(&lsp, &self.prev_lsp);
+        self.prev_lsp = lsp;
 
-        self.pitch_lag[0] = gb.get(7);
-        if self.pitch_lag[0] > 123 {
-            return Err(());
-        }
-        self.pitch_lag[0] += PITCH_MIN;
-        self.subframe[1].ad_cb_lag = gb.get(2);
-
-        self.pitch_lag[1] = gb.get(7);
-        if self.pitch_lag[1] > 123 {
-            return Err(());
-        }
-        self.pitch_lag[1] += PITCH_MIN;
-        self.subframe[3].ad_cb_lag = gb.get(2);
-        self.subframe[0].ad_cb_lag = 1;
-        self.subframe[2].ad_cb_lag = 1;
-
-        for i in 0..SUBFRAMES {
-            let mut temp = gb.get(12);
-            let mut ad_cb_len = 170;
-            self.subframe[i].dirac_train = 0;
-            if self.cur_rate == Rate::R6300 && self.pitch_lag[i >> 1] < SUBFRAME_LEN as i32 - 2 {
-                self.subframe[i].dirac_train = temp >> 11;
-                temp &= 0x7ff;
-                ad_cb_len = 85;
+        self.conceal_gain = match frame {
+            Some(f) if self.erase_count == 0 => {
+                FIXED_GAIN[shr16(add16(f.fcb_gain[2] as i16, f.fcb_gain[3] as i16), 1) as usize]
             }
-            self.subframe[i].ad_cb_gain = temp / GAIN_LEVELS;
-            if self.subframe[i].ad_cb_gain < ad_cb_len {
-                self.subframe[i].amp_index = temp - self.subframe[i].ad_cb_gain * GAIN_LEVELS;
-            } else {
-                return Err(());
-            }
-        }
+            _ => mul16r(self.conceal_gain, 0x6000),
+        };
 
-        for i in 0..SUBFRAMES {
-            self.subframe[i].grid_index = gb.get(1);
-        }
-
-        if self.cur_rate == Rate::R6300 {
-            gb.get(1); // reserved bit
-
-            let mut temp = gb.get(13);
-            self.subframe[0].pulse_pos = temp / 810;
-            temp -= self.subframe[0].pulse_pos * 810;
-            self.subframe[1].pulse_pos = temp / 90;
-            temp -= self.subframe[1].pulse_pos * 90;
-            self.subframe[2].pulse_pos = temp / 9;
-            self.subframe[3].pulse_pos = temp - self.subframe[2].pulse_pos * 9;
-
-            self.subframe[0].pulse_pos = (self.subframe[0].pulse_pos << 16) + gb.get(16);
-            self.subframe[1].pulse_pos = (self.subframe[1].pulse_pos << 14) + gb.get(14);
-            self.subframe[2].pulse_pos = (self.subframe[2].pulse_pos << 16) + gb.get(16);
-            self.subframe[3].pulse_pos = (self.subframe[3].pulse_pos << 14) + gb.get(14);
-
-            self.subframe[0].pulse_sign = gb.get(6);
-            self.subframe[1].pulse_sign = gb.get(5);
-            self.subframe[2].pulse_sign = gb.get(6);
-            self.subframe[3].pulse_sign = gb.get(5);
-        } else {
-            for i in 0..SUBFRAMES {
-                self.subframe[i].pulse_pos = gb.get(12);
-            }
-            for i in 0..SUBFRAMES {
-                self.subframe[i].pulse_sign = gb.get(4);
-            }
-        }
-        Ok(())
+        let exc = match frame {
+            Some(f) => self.good_excitation(f),
+            None => self.concealed_excitation(),
+        };
+        self.cng_seed = CNG_SEED;
+        (exc, lpc)
     }
 
-    fn comp_ppf_coeff(&self, offset: usize, pitch_lag: i32, rate: Rate) -> PpfParam {
-        let audio = &self.audio[..];
-        let mut energy = [0i32; 5];
-        let pos = LPC_ORDER + offset;
-        let p = pos as isize;
-        let fwd_lag = autocorr_max(
-            audio,
-            pos,
-            offset as i32,
-            &mut energy[1],
-            pitch_lag,
-            SUBFRAME_LEN,
-            1,
-        );
-        let back_lag = autocorr_max(
-            audio,
-            pos,
-            offset as i32,
-            &mut energy[3],
-            pitch_lag,
-            SUBFRAME_LEN,
-            -1,
-        );
-
-        let mut ppf = PpfParam {
-            index: 0,
-            opt_gain: 0,
-            sc_gain: 0x7fff,
-        };
-        if back_lag == 0 && fwd_lag == 0 {
-            return ppf;
-        }
-
-        energy[0] = dot_product(audio, p, audio, p, SUBFRAME_LEN);
-        if fwd_lag != 0 {
-            let q = p + fwd_lag as isize;
-            energy[2] = dot_product(audio, q, audio, q, SUBFRAME_LEN);
-        }
-        if back_lag != 0 {
-            let q = p - back_lag as isize;
-            energy[4] = dot_product(audio, q, audio, q, SUBFRAME_LEN);
-        }
-
-        let mut temp1 = 0;
-        for &e in &energy {
-            temp1 = temp1.max(e);
-        }
-        let scale = normalize_bits(temp1, 31) as i16 as i32;
-        for e in energy.iter_mut() {
-            *e = shl(*e, scale) >> 16;
-        }
-
-        if fwd_lag != 0 && back_lag == 0 {
-            ppf = comp_ppf_gains(fwd_lag, rate, energy[0], energy[1], energy[2]);
-        } else if fwd_lag == 0 {
-            ppf = comp_ppf_gains(-back_lag, rate, energy[0], energy[3], energy[4]);
-        } else {
-            let t1 = energy[4]
-                .wrapping_mul((energy[1].wrapping_mul(energy[1]).wrapping_add(1 << 14)) >> 15);
-            let t2 = energy[2]
-                .wrapping_mul((energy[3].wrapping_mul(energy[3]).wrapping_add(1 << 14)) >> 15);
-            ppf = if t1 >= t2 {
-                comp_ppf_gains(fwd_lag, rate, energy[0], energy[1], energy[2])
-            } else {
-                comp_ppf_gains(-back_lag, rate, energy[0], energy[3], energy[4])
+    fn good_excitation(&mut self, frame: &Active) -> [i16; FRAME_SAMPLES] {
+        let mut x = [0i16; HISTORY + FRAME_SAMPLES];
+        x[..HISTORY].copy_from_slice(&self.prev_exc);
+        for i in 0..4 {
+            let fixed = match frame.rate {
+                Rate::High => mpmlq_vector(frame, i),
+                Rate::Low => acelp_vector(frame, i),
             };
-        }
-        ppf
-    }
-
-    /// comp_interp_index: returns (index, exc_eng, scale).
-    fn comp_interp_index(&mut self, pitch_lag: i32) -> (i32, i32, i32) {
-        let offset = PITCH_MAX + 2 * SUBFRAME_LEN;
-        let n = FRAME_LEN + PITCH_MAX;
-        let scale = {
-            let (dst, src) = (
-                &mut self.audio[LPC_ORDER..LPC_ORDER + n],
-                &self.excitation[..n],
+            let start = HISTORY + i * SUBFRAME;
+            let even_lag = frame.even_lag(i);
+            let short_book = frame.rate == Rate::High && even_lag < SHORT_LAG;
+            let adaptive = adaptive_vector(
+                &x,
+                start,
+                even_lag,
+                frame.delta[i],
+                frame.acb_gain[i],
+                short_book,
             );
-            scale_vector(dst, src, n)
-        };
-        let audio = &self.audio[..];
-        let pos = LPC_ORDER + offset;
-        let p = pos as isize;
-
-        let mut ccr = 0;
-        let index = autocorr_max(
-            audio,
-            pos,
-            offset as i32,
-            &mut ccr,
-            pitch_lag,
-            SUBFRAME_LEN * 2,
-            -1,
-        );
-        let ccr = sat_add32(ccr, 1 << 15) >> 16;
-
-        let tgt_eng = dot_product(audio, p, audio, p, SUBFRAME_LEN * 2);
-        let exc_eng = sat_add32(tgt_eng, 1 << 15) >> 16;
-
-        if ccr <= 0 {
-            return (0, exc_eng, scale);
-        }
-
-        let q = p - index as isize;
-        let best_eng = dot_product(audio, q, audio, q, SUBFRAME_LEN * 2);
-        let best_eng = sat_add32(best_eng, 1 << 15) >> 16;
-
-        let temp = best_eng.wrapping_mul(exc_eng) >> 3;
-        if temp < ccr.wrapping_mul(ccr) {
-            (index, exc_eng, scale)
-        } else {
-            (0, exc_eng, scale)
-        }
-    }
-
-    /// residual_interp, output into audio[LPC_ORDER..].
-    fn residual_interp(&mut self) {
-        let lag = self.interp_index;
-        let gain = self.interp_gain;
-        let out = &mut self.audio[LPC_ORDER..LPC_ORDER + FRAME_LEN];
-        if lag > 0 && (lag as usize) <= PITCH_MAX {
-            let lag = lag as usize;
-            for i in 0..lag {
-                out[i] = ((self.excitation[PITCH_MAX + i - lag] as i32 * 3) >> 2) as i16;
-            }
-            for k in lag..FRAME_LEN {
-                out[k] = out[k - lag];
-            }
-        } else {
-            for o in out.iter_mut() {
-                self.random_seed =
-                    self.random_seed.wrapping_mul(521).wrapping_add(259) as i16 as i32;
-                *o = (gain.wrapping_mul(self.random_seed) >> 15) as i16;
-            }
-            self.excitation[..FRAME_LEN + PITCH_MAX].fill(0);
-        }
-    }
-
-    fn estimate_sid_gain(&self) -> i32 {
-        let sid_gain = self.sid_gain;
-        let mut shift = 16i32.wrapping_sub(self.cur_gain.wrapping_mul(2));
-        let t: i32 = if shift > 0 {
-            if sid_gain == 0 {
-                0
-            } else if shift >= 31 || (((sid_gain as u32) << shift) as i32) >> shift != sid_gain {
-                if sid_gain < 0 {
-                    i32::MIN
-                } else {
-                    i32::MAX
-                }
-            } else {
-                sid_gain.wrapping_mul(1 << shift)
-            }
-        } else if shift < -31 {
-            if sid_gain < 0 {
-                -1
-            } else {
-                0
-            }
-        } else {
-            sid_gain >> (-shift)
-        };
-        let x = clipl_i32((t as i64 * CNG_FILT[0] as i64) >> 16);
-
-        if x >= CNG_BSEG[2] {
-            return 0x3F;
-        }
-
-        let seg;
-        if x >= CNG_BSEG[1] {
-            shift = 4;
-            seg = 3;
-        } else {
-            shift = 3;
-            seg = (x >= CNG_BSEG[0]) as i32;
-        }
-        let seg2 = seg.min(3);
-
-        let mut val = 1i32 << shift;
-        let mut val_add = val >> 1;
-        for _ in 0..shift {
-            let mut t = seg * 32 + (val << seg2);
-            t = t.wrapping_mul(t);
-            if x >= t {
-                val += val_add;
-            } else {
-                val -= val_add;
-            }
-            val_add >>= 1;
-        }
-
-        let t = seg * 32 + (val << seg2);
-        let y = t.wrapping_mul(t).wrapping_sub(x);
-        if y <= 0 {
-            let t = seg * 32 + ((val + 1) << seg2);
-            let t = t.wrapping_mul(t).wrapping_sub(x);
-            val += (seg2 - 1) * 16;
-            if t >= y {
-                val += 1;
-            }
-        } else {
-            let t = seg * 32 + ((val - 1) << seg2);
-            let t = t.wrapping_mul(t).wrapping_sub(x);
-            val += (seg2 - 1) * 16;
-            if t >= y {
-                val -= 1;
-            }
-        }
-        val
-    }
-
-    fn generate_noise(&mut self) {
-        let mut off = [0usize; SUBFRAMES];
-        let mut signs = [0i32; SUBFRAMES / 2 * 11];
-        let mut pos = [0usize; SUBFRAMES / 2 * 11];
-        let mut tmp = [0i32; SUBFRAME_LEN * 2];
-        let seed = &mut self.cng_random_seed;
-
-        self.pitch_lag[0] = cng_rand(seed, 21) + 123;
-        self.pitch_lag[1] = cng_rand(seed, 19) + 123;
-
-        for i in 0..SUBFRAMES {
-            self.subframe[i].ad_cb_gain = cng_rand(seed, 50) + 1;
-            self.subframe[i].ad_cb_lag = CNG_ADAPTIVE_CB_LAG[i];
-        }
-
-        for i in 0..SUBFRAMES / 2 {
-            let mut t = cng_rand(seed, 1 << 13);
-            off[i * 2] = (t & 1) as usize;
-            off[i * 2 + 1] = ((t >> 1) & 1) as usize + SUBFRAME_LEN;
-            t >>= 2;
-            for j in 0..11 {
-                signs[i * 11 + j] = ((t & 1) * 2 - 1) * (1 << 14);
-                t >>= 1;
+            for n in 0..SUBFRAME {
+                x[start + n] = add16(shl16(fixed[n], 1), adaptive[n]);
             }
         }
 
-        let mut idx = 0;
-        for i in 0..SUBFRAMES {
-            for (j, v) in tmp.iter_mut().take(SUBFRAME_LEN / 2).enumerate() {
-                *v = j as i32;
-            }
-            let mut t = SUBFRAME_LEN as i32 / 2;
-            for _ in 0..PULSES[i] {
-                let idx2 = cng_rand(seed, t) as usize;
-                pos[idx] = (tmp[idx2] * 2) as usize + off[i];
-                t -= 1;
-                tmp[idx2] = tmp[t as usize];
-                idx += 1;
-            }
-        }
+        let mut xn = x;
+        self.cur_gain = vnorm(&mut xn);
+        self.classify(&xn, frame.lag[1]);
 
-        let mut vp = LPC_ORDER;
-        self.audio[vp..vp + PITCH_MAX].copy_from_slice(&self.prev_excitation);
-        let mut i = 0;
-        while i < SUBFRAMES {
-            let lag = self.pitch_lag[i >> 1];
-            let v = gen_acb_excitation(&self.audio, vp, lag, &self.subframe[i], self.cur_rate);
-            self.audio[vp..vp + SUBFRAME_LEN].copy_from_slice(&v);
-            let v = gen_acb_excitation(
-                &self.audio,
-                vp + SUBFRAME_LEN,
-                lag,
-                &self.subframe[i + 1],
-                self.cur_rate,
-            );
-            self.audio[vp + SUBFRAME_LEN..vp + 2 * SUBFRAME_LEN].copy_from_slice(&v);
-
-            let vec = &mut self.audio[vp..vp + 2 * SUBFRAME_LEN];
-            let mut t = 0i32;
-            for &s in vec.iter() {
-                t |= (s as i32).abs();
-            }
-            t = t.min(0x7FFF);
-            let mut shift = if t == 0 {
-                0
-            } else {
-                (-10 + av_log2(t as u32)).max(-2)
-            };
-            let mut sum: i64 = 0;
-            if shift < 0 {
-                for (j, &s) in vec.iter().enumerate() {
-                    let t = (s as i32) * (1 << -shift);
-                    sum += t as i64 * t as i64;
-                    tmp[j] = t;
-                }
-            } else {
-                for (j, &s) in vec.iter().enumerate() {
-                    let t = (s as i32) >> shift;
-                    sum += t as i64 * t as i64;
-                    tmp[j] = t;
-                }
-            }
-
-            let base = (i / 2) * 11;
-            let mut b0: i32 = 0;
-            for j in 0..11 {
-                b0 = b0.wrapping_add(tmp[pos[base + j]].wrapping_mul(signs[base + j]));
-            }
-            b0 = ((b0 as i64 * 2 * 2979 + (1 << 29)) >> 30) as i32;
-
-            let mut c = self
-                .cur_gain
-                .wrapping_mul(self.cur_gain.wrapping_mul(SUBFRAME_LEN as i32) >> 5);
-            if shift * 2 + 3 >= 0 {
-                c = shr(c, shift * 2 + 3);
-            } else {
-                c = shl(c, -(shift * 2 + 3));
-            }
-            c = ((clipl_i32(sum << 1).wrapping_sub(c) as i64 * 2979) >> 15) as i32;
-
-            let delta = b0.wrapping_mul(b0).wrapping_mul(2).wrapping_sub(c);
-            let mut x;
-            if delta <= 0 {
-                x = b0.wrapping_neg();
-            } else {
-                let d = square_root(delta as u32) as i32;
-                x = d - b0;
-                let t = d + b0;
-                if t.wrapping_abs() < x.wrapping_abs() {
-                    x = -t;
-                }
-            }
-            shift += 1;
-            if shift < 0 {
-                x >>= -shift;
-            } else {
-                x = x.wrapping_mul(1 << shift);
-            }
-            x = x.clamp(-10000, 10000);
-
-            for j in 0..11 {
-                let k = base + j;
-                let p = pos[k];
-                vec[p] = clip_i16(vec[p] as i32 + ((x * signs[k]) >> 15));
-            }
-
-            self.audio
-                .copy_within(vp..vp + 2 * SUBFRAME_LEN, vp + PITCH_MAX);
-            vp += SUBFRAME_LEN * 2;
-            i += 2;
-        }
-        self.prev_excitation
-            .copy_from_slice(&self.audio[LPC_ORDER + FRAME_LEN..LPC_ORDER + FRAME_LEN + PITCH_MAX]);
-    }
-
-    fn gain_scale(&mut self, buf: &mut [i16], energy: i32) {
-        let mut num = energy;
-        let mut denom: i32 = 0;
-        for &b in buf.iter().take(SUBFRAME_LEN) {
-            let t = (b >> 2) as i32;
-            denom = sat_dadd32(denom, t * t);
-        }
-
-        let gain: i32 = if num != 0 && denom != 0 {
-            let bits1 = normalize_bits(num, 31);
-            let mut bits2 = normalize_bits(denom, 31);
-            num = shl(num, bits1) >> 1;
-            denom = shl(denom, bits2);
-            bits2 = 5 + bits1 - bits2;
-            // av_clip_uintp2(bits2, 5)
-            if bits2 & !31 != 0 {
-                bits2 = (((!bits2) as u32 >> 31) & 31) as i32;
-            }
-            let g = div(num >> 1, denom >> 16);
-            square_root(shr(shl(g, 16), bits2) as u32) as i32
-        } else {
-            1 << 12
-        };
-
-        for b in buf.iter_mut().take(SUBFRAME_LEN) {
-            self.pf_gain = (15i32
-                .wrapping_mul(self.pf_gain)
-                .wrapping_add(gain)
-                .wrapping_add(1 << 3))
-                >> 4;
-            let m = self.pf_gain.wrapping_add(self.pf_gain >> 4);
-            *b = clip_i16(((*b as i32).wrapping_mul(m).wrapping_add(1 << 10)) >> 11);
-        }
-    }
-
-    fn formant_postfilter(&mut self, lpc: &[i16; SUBFRAMES * LPC_ORDER], dst: &mut [i16]) {
-        let mut filter_signal = [0i32; LPC_ORDER + FRAME_LEN];
-
-        self.audio[..LPC_ORDER].copy_from_slice(&self.fir_mem);
-        filter_signal[..LPC_ORDER].copy_from_slice(&self.iir_mem);
-
-        for j in 0..SUBFRAMES {
-            let i = LPC_ORDER + j * SUBFRAME_LEN;
-            let mut fir = [0i16; LPC_ORDER];
-            let mut iir = [0i16; LPC_ORDER];
-            for k in 0..LPC_ORDER {
-                let l = -(lpc[j * LPC_ORDER + k] as i32);
-                fir[k] = ((l * POSTFILTER_TBL[0][k] as i32 + (1 << 14)) >> 15) as i16;
-                iir[k] = ((l * POSTFILTER_TBL[1][k] as i32 + (1 << 14)) >> 15) as i16;
-            }
-            // iir_filter(width = 1): res_shift 0, in_shift 16
-            for m in 0..SUBFRAME_LEN {
-                let mut filter: i64 = 0;
-                for n in 1..=LPC_ORDER {
-                    let a = (fir[n - 1] as i32).wrapping_mul(self.audio[i + m - n] as i32);
-                    let b = (iir[n - 1] as i32).wrapping_mul(filter_signal[i + m - n] >> 16);
-                    filter -= a.wrapping_sub(b) as i64;
-                }
-                filter_signal[i + m] =
-                    clipl_i32((self.audio[i + m] as i64) * 65536 + filter * 8 + (1 << 15));
-            }
-        }
-
-        self.fir_mem
-            .copy_from_slice(&self.audio[FRAME_LEN..FRAME_LEN + LPC_ORDER]);
-        self.iir_mem
-            .copy_from_slice(&filter_signal[FRAME_LEN..FRAME_LEN + LPC_ORDER]);
-
-        for i in 0..SUBFRAMES {
-            let bi = LPC_ORDER + i * SUBFRAME_LEN;
-            let d = &mut dst[i * SUBFRAME_LEN..(i + 1) * SUBFRAME_LEN];
-
-            let scale = scale_vector(d, &self.audio[bi..bi + SUBFRAME_LEN], SUBFRAME_LEN);
-
-            let ac0 = dot_product(d, 0, d, 1, SUBFRAME_LEN - 1);
-            let ac1 = dot_product(d, 0, d, 0, SUBFRAME_LEN);
-
-            let mut temp = ac1 >> 16;
-            if temp != 0 {
-                temp = div(ac0 >> 2, temp);
-            }
-            self.reflection_coef = (3i32
-                .wrapping_mul(self.reflection_coef)
-                .wrapping_add(temp)
-                .wrapping_add(2))
-                >> 2;
-            let temp = (self.reflection_coef.wrapping_neg() >> 1) & !3;
-
-            for j in 0..SUBFRAME_LEN {
-                let s = filter_signal[bi + j];
-                let sp = filter_signal[bi + j - 1];
-                d[j] = (sat_dadd32(s, (sp >> 16).wrapping_mul(temp)) >> 16) as i16;
-            }
-
-            let t = 2 * scale + 4;
-            let energy = if t < 0 {
-                clipl_i32((ac1 as i64) << (-t))
-            } else {
-                ac1 >> t
-            };
-
-            self.gain_scale(d, energy);
-        }
-    }
-
-    fn decode_into(&mut self, pkt: &[u8], out: &mut [i16]) {
-        let mut bad_frame = false;
-        let mut ppf = [PpfParam::default(); SUBFRAMES];
-        let mut lpc = [0i16; SUBFRAMES * LPC_ORDER];
-        // Synthesis input: the excitation buffer (postfilter off) or audio.
-        let mut synth_from_exc = false;
-
-        if self.unpack_bitstream(pkt).is_err() {
-            bad_frame = true;
-            self.cur_frame_type = if self.past_frame_type == FrameType::Active {
-                FrameType::Active
-            } else {
-                FrameType::Untransmitted
-            };
-        }
-
-        if self.cur_frame_type == FrameType::Active {
-            if !bad_frame {
-                self.erased_frames = 0;
-            } else if self.erased_frames != 3 {
-                self.erased_frames += 1;
-            }
-
-            let cur_lsp = inverse_quant(&self.prev_lsp, &mut self.lsp_index, bad_frame);
-            lsp_interpolate(&mut lpc, &cur_lsp, &self.prev_lsp);
-            self.prev_lsp = cur_lsp;
-
-            self.excitation[..PITCH_MAX].copy_from_slice(&self.prev_excitation);
-            if self.erased_frames == 0 {
-                let a2 = self.subframe[2].amp_index;
-                let a3 = self.subframe[3].amp_index;
-                self.interp_gain = FIXED_CB_GAIN
-                    .get(((a2 + a3) >> 1) as usize)
-                    .copied()
-                    .unwrap_or(0) as i32;
-
-                for i in 0..SUBFRAMES {
-                    let lag = self.pitch_lag[i >> 1];
-                    let fcb = gen_fcb_excitation(&self.subframe[i], self.cur_rate, lag, i);
-                    let acb = gen_acb_excitation(
-                        &self.excitation,
-                        SUBFRAME_LEN * i,
-                        lag,
-                        &self.subframe[i],
-                        self.cur_rate,
-                    );
-                    let v = &mut self.excitation
-                        [PITCH_MAX + SUBFRAME_LEN * i..PITCH_MAX + SUBFRAME_LEN * (i + 1)];
-                    for j in 0..SUBFRAME_LEN {
-                        let t = clip_i16(fcb[j] as i32 * 2) as i32;
-                        v[j] = clip_i16(t + acb[j] as i32);
-                    }
-                }
-
-                let (idx, eng, scale) = self.comp_interp_index(self.pitch_lag[1]);
-                self.interp_index = idx;
-                self.sid_gain = eng;
-                self.cur_gain = scale;
-
-                if self.postfilter {
-                    for j in 0..SUBFRAMES {
-                        ppf[j] = self.comp_ppf_coeff(
-                            PITCH_MAX + j * SUBFRAME_LEN,
-                            self.pitch_lag[j >> 1],
-                            self.cur_rate,
-                        );
-                    }
-                    for j in 0..SUBFRAMES {
-                        let i = j * SUBFRAME_LEN;
-                        let p = ppf[j];
-                        for k in 0..SUBFRAME_LEN {
-                            let a = self.excitation[PITCH_MAX + i + k];
-                            let bi = (PITCH_MAX + i + k) as isize + p.index as isize;
-                            let b = if bi < 0 {
-                                0
-                            } else {
-                                self.excitation.get(bi as usize).copied().unwrap_or(0)
-                            };
-                            self.audio[LPC_ORDER + i + k] =
-                                weighted(a, b, p.sc_gain, p.opt_gain, 1 << 14, 15);
-                        }
-                    }
-                } else {
-                    synth_from_exc = true;
-                }
-
-                self.prev_excitation
-                    .copy_from_slice(&self.excitation[FRAME_LEN..FRAME_LEN + PITCH_MAX]);
-            } else {
-                self.interp_gain = (self.interp_gain.wrapping_mul(3).wrapping_add(2)) >> 2;
-                if self.erased_frames == 3 {
-                    // Mute output (FFmpeg also clears the output frame, which
-                    // the synthesis below then overwrites).
-                    self.excitation[..FRAME_LEN + PITCH_MAX].fill(0);
-                    self.prev_excitation.fill(0);
-                } else {
-                    self.residual_interp();
-                    let s = LPC_ORDER + FRAME_LEN - PITCH_MAX;
-                    self.prev_excitation
-                        .copy_from_slice(&self.audio[s..s + PITCH_MAX]);
-                }
-            }
-            self.cng_random_seed = CNG_RANDOM_SEED;
-        } else {
-            if self.cur_frame_type == FrameType::Sid {
-                self.sid_gain = sid_gain_to_lsp_index(self.subframe[0].amp_index);
-                self.sid_lsp = inverse_quant(&self.prev_lsp, &mut self.lsp_index, false);
-            } else if self.past_frame_type == FrameType::Active {
-                self.sid_gain = self.estimate_sid_gain();
-            }
-
-            if self.past_frame_type == FrameType::Active {
-                self.cur_gain = self.sid_gain;
-            } else {
-                self.cur_gain = (self.cur_gain.wrapping_mul(7).wrapping_add(self.sid_gain)) >> 3;
-            }
-            self.generate_noise();
-            let sid = self.sid_lsp;
-            lsp_interpolate(&mut lpc, &sid, &self.prev_lsp);
-            self.prev_lsp = sid;
-        }
-
-        self.past_frame_type = self.cur_frame_type;
-
-        // LP synthesis (ff_celp_lp_synthesis_filter, shift 1, rounder 1<<12)
-        self.audio[..LPC_ORDER].copy_from_slice(&self.synth_mem);
-        for j in 0..SUBFRAMES {
-            let i = LPC_ORDER + j * SUBFRAME_LEN;
-            let coef = &lpc[j * LPC_ORDER..(j + 1) * LPC_ORDER];
-            for n in 0..SUBFRAME_LEN {
-                let mut sum: i32 = 1 << 12;
-                for k in 1..=LPC_ORDER {
-                    sum = sum.wrapping_sub(
-                        (coef[k - 1] as i32).wrapping_mul(self.audio[i + n - k] as i32),
-                    );
-                }
-                let input = if synth_from_exc {
-                    // FFmpeg: audio = vector_ptr - LPC_ORDER
-                    self.excitation[PITCH_MAX - LPC_ORDER + i + n]
-                } else {
-                    self.audio[i + n]
-                };
-                let sum1 = ((sum >> 12) + input as i32) >> 1;
-                self.audio[i + n] = clip_i16(sum1);
-            }
-        }
-        self.synth_mem
-            .copy_from_slice(&self.audio[FRAME_LEN..FRAME_LEN + LPC_ORDER]);
-
+        let mut exc = [0i16; FRAME_SAMPLES];
+        exc.copy_from_slice(&x[HISTORY..]);
         if self.postfilter {
-            self.formant_postfilter(&lpc, out);
-        } else {
-            for i in 0..FRAME_LEN {
-                out[i] = clip_i16(2 * self.audio[LPC_ORDER + i] as i32);
+            let filters: [PitchPostfilter; 4] = std::array::from_fn(|i| {
+                PitchPostfilter::search(&xn, HISTORY + i * SUBFRAME, frame.even_lag(i), frame.rate)
+            });
+            for (i, filter) in filters.iter().enumerate() {
+                let b = HISTORY + i * SUBFRAME;
+                let delayed = (b as isize + filter.lag) as usize;
+                for n in 0..SUBFRAME {
+                    let acc = mac32(
+                        lmul(x[b + n], filter.gain),
+                        x[delayed + n],
+                        filter.delayed_gain,
+                    );
+                    exc[i * SUBFRAME + n] = round16(acc);
+                }
             }
+        }
+
+        self.sid_lsp = self.prev_lsp;
+        self.prev_exc.copy_from_slice(&x[FRAME_SAMPLES..]);
+        exc
+    }
+
+    /// Voicing decision for concealment, and the energy that restores a
+    /// lost first SID frame, from the normalised excitation `xn`.
+    fn classify(&mut self, xn: &[i16; HISTORY + FRAME_SAMPLES], lag2: i16) {
+        const START: usize = HISTORY + 2 * SUBFRAME;
+        const LEN: usize = 2 * SUBFRAME;
+        let lag = lag2.min(LAG_SEARCH_MAX) as usize;
+        let current = &xn[START..START + LEN];
+        let (mut best, mut best_corr) = (lag, 0);
+        for t in lag - 3..=lag + 3 {
+            let c = dot(current, &xn[START - t..START - t + LEN]);
+            if c > best_corr {
+                best_corr = c;
+                best = t;
+            }
+        }
+        let ten = round16(dot(current, current));
+        self.sid_gain = ten;
+        let past = &xn[START - best..START - best + LEN];
+        let eb = dot(past, past);
+
+        let cc = round16(best_corr);
+        self.conceal_lag = if cc <= 0 {
+            0
+        } else {
+            let acc = msu32(shr32(lmul(round16(eb), ten), 3), cc, cc);
+            if acc < 0 {
+                best as i16
+            } else {
+                0
+            }
+        };
+    }
+
+    fn concealed_excitation(&mut self) -> [i16; FRAME_SAMPLES] {
+        let mut exc = [0i16; FRAME_SAMPLES];
+        if self.erase_count >= 3 {
+            self.prev_exc = [0; HISTORY];
+        } else if self.conceal_lag != 0 {
+            let lag = self.conceal_lag as usize;
+            let mut x = [0i16; HISTORY + FRAME_SAMPLES];
+            x[..HISTORY].copy_from_slice(&self.prev_exc);
+            for n in 0..FRAME_SAMPLES {
+                x[HISTORY + n] = x[HISTORY - lag + n];
+            }
+            for n in 0..FRAME_SAMPLES {
+                x[HISTORY + n] = mul16(x[HISTORY + n], 0x6000);
+                exc[n] = x[HISTORY + n];
+            }
+            self.prev_exc.copy_from_slice(&x[FRAME_SAMPLES..]);
+        } else {
+            for sample in &mut exc {
+                *sample = mul16(self.conceal_gain, rand16(&mut self.conceal_seed));
+            }
+            self.prev_exc = [0; HISTORY];
+        }
+        exc
+    }
+
+    /// Excitation and LPC of a comfort noise frame. `sid` holds the LSP and
+    /// gain indices of a SID frame; `None` is an untransmitted frame.
+    fn comfort_noise(
+        &mut self,
+        sid: Option<(i32, i16)>,
+    ) -> ([i16; FRAME_SAMPLES], [[i16; ORDER]; 4]) {
+        let after_speech = self.past_kind == Kind::Active;
+        match sid {
+            Some((lsp, gain)) => {
+                self.sid_gain = sid_gain_decode(gain);
+                self.sid_lsp = decode_lsp(lsp, &self.prev_lsp, false);
+            }
+            None if after_speech => {
+                let index = sid_gain_quantize(self.sid_gain, self.cur_gain);
+                self.sid_gain = sid_gain_decode(index);
+            }
+            None => {}
+        }
+        self.cur_gain = if after_speech {
+            self.sid_gain
+        } else {
+            hi16(add32(
+                lmul(self.cur_gain, 0x7000),
+                lmul(self.sid_gain, 0x1000),
+            ))
+        };
+
+        let exc = self.noise_excitation();
+        let lpc = subframe_lpc(&self.sid_lsp, &self.prev_lsp);
+        self.prev_lsp = self.sid_lsp;
+        (exc, lpc)
+    }
+
+    /// Draws a random number in 0..n from the comfort noise seed.
+    fn draw(&mut self, n: i16) -> i16 {
+        mul16(rand16(&mut self.cng_seed) & 0x7fff, n)
+    }
+
+    fn noise_excitation(&mut self) -> [i16; FRAME_SAMPLES] {
+        const DELTA: [i16; 4] = [1, 0, 1, 3];
+        let lags = [self.draw(21) + 123, self.draw(19) + 123];
+        let mut gains = [0usize; 4];
+        for gain in &mut gains {
+            *gain = (self.draw(50) + 1) as usize;
+        }
+
+        let mut offset = [0usize; 4];
+        let mut signs = [[0i16; 11]; 2];
+        for (block, block_signs) in signs.iter_mut().enumerate() {
+            let t = self.draw(8192);
+            offset[2 * block] = (t & 1) as usize;
+            offset[2 * block + 1] = SUBFRAME + ((t >> 1) & 1) as usize;
+            for (k, sign) in block_signs.iter_mut().enumerate() {
+                *sign = if (t >> (k + 2)) & 1 != 0 {
+                    16384
+                } else {
+                    -16384
+                };
+            }
+        }
+
+        let mut positions = [[0usize; 11]; 2];
+        for subframe in 0..4 {
+            let mut slots: [usize; 30] = std::array::from_fn(|k| k);
+            let mut count = 30;
+            let first = if subframe % 2 == 0 {
+                0
+            } else {
+                MPMLQ_PULSE_COUNT[subframe - 1]
+            };
+            for pulse in 0..MPMLQ_PULSE_COUNT[subframe] {
+                let j = self.draw(count as i16) as usize;
+                positions[subframe / 2][first + pulse] = 2 * slots[j] + offset[subframe];
+                count -= 1;
+                slots[j] = slots[count];
+            }
+        }
+
+        let target = self.cur_gain;
+        let mut exc = [0i16; FRAME_SAMPLES];
+        for block in 0..2 {
+            let mut buf = [0i16; HISTORY + 2 * SUBFRAME];
+            buf[..HISTORY].copy_from_slice(&self.prev_exc);
+            let mut e = [0i16; 2 * SUBFRAME];
+            for half in 0..2 {
+                let i = 2 * block + half;
+                let u = adaptive_vector(
+                    &buf,
+                    HISTORY + half * SUBFRAME,
+                    lags[block],
+                    DELTA[i],
+                    gains[i],
+                    false,
+                );
+                e[half * SUBFRAME..(half + 1) * SUBFRAME].copy_from_slice(&u);
+            }
+            add_noise_pulses(&mut e, &positions[block], &signs[block], target);
+            exc[block * 2 * SUBFRAME..(block + 1) * 2 * SUBFRAME].copy_from_slice(&e);
+            self.prev_exc.copy_within(2 * SUBFRAME.., 0);
+            self.prev_exc[HISTORY - 2 * SUBFRAME..].copy_from_slice(&e);
+        }
+        exc
+    }
+
+    fn synthesize(&mut self, exc: &[i16], a: &[i16; ORDER]) -> [i16; SUBFRAME] {
+        let mut y = [0i16; SUBFRAME];
+        for (out, &x) in y.iter_mut().zip(exc) {
+            let acc = shr32(dep_hi(x), 3);
+            let acc = shl32(
+                a.iter()
+                    .zip(&self.synth_mem)
+                    .fold(acc, |acc, (&c, &m)| mac32(acc, c, m)),
+                2,
+            );
+            self.synth_mem.copy_within(..ORDER - 1, 1);
+            self.synth_mem[0] = round16(acc);
+            *out = if self.postfilter {
+                self.synth_mem[0]
+            } else {
+                shl16(self.synth_mem[0], 1)
+            };
+        }
+        y
+    }
+
+    /// Formant postfilter with tilt compensation, in place. Returns the
+    /// energy of its input for the gain scaling unit.
+    fn formant_postfilter(&mut self, y: &mut [i16; SUBFRAME], a: &[i16; ORDER]) -> i32 {
+        let mut zeros = [0i16; ORDER];
+        let mut poles = [0i16; ORDER];
+        for j in 0..ORDER {
+            zeros[j] = mul16r(a[j], POSTFILTER_ZERO_WEIGHTS[j]);
+            poles[j] = mul16r(a[j], POSTFILTER_POLE_WEIGHTS[j]);
+        }
+
+        let mut t = *y;
+        let z = vnorm(&mut t);
+        let r1 = dot(&t[1..], &t[..SUBFRAME - 1]);
+        let r0 = t[1..]
+            .iter()
+            .fold(lmul(t[0], t[0]), |acc, &x| mac32(acc, x, x));
+        let energy = shr32(r0, 2 * z + 4);
+
+        let h = hi16(r0);
+        let k = if h != 0 {
+            let r1h = shr32(r1, 1);
+            let k = div32x16(abs32(r1h), h);
+            if r1h < 0 {
+                neg16(k)
+            } else {
+                k
+            }
+        } else {
+            0
+        };
+        let acc = mac32(msu32(dep_hi(self.tilt), self.tilt, 0x2000), k, 0x2000);
+        self.tilt = round16(acc);
+        let mu = mul16(self.tilt, -16384) & !3;
+
+        for sample in y.iter_mut() {
+            let input = *sample;
+            let mut acc = shr32(dep_hi(input), 2);
+            acc = zeros
+                .iter()
+                .zip(&self.pf_fir_mem)
+                .fold(acc, |acc, (&c, &m)| msu32(acc, c, m));
+            self.pf_fir_mem.copy_within(..ORDER - 1, 1);
+            self.pf_fir_mem[0] = input;
+            acc = poles
+                .iter()
+                .zip(&self.pf_iir_mem)
+                .fold(acc, |acc, (&c, &m)| mac32(acc, c, m));
+            self.pf_iir_mem.copy_within(..ORDER - 1, 1);
+            acc = shl32(acc, 2);
+            self.pf_iir_mem[0] = round16(acc);
+            *sample = round16(mac32(acc, self.pf_iir_mem[1], mu));
+        }
+        energy
+    }
+
+    /// Scales the postfiltered subframe back to the energy of the synthesis
+    /// output, with a smoothed gain.
+    fn scale_gain(&mut self, y: &mut [i16; SUBFRAME], energy: i32) {
+        let filtered = y
+            .iter()
+            .fold(0, |acc, &x| mac32(acc, shr16(x, 2), shr16(x, 2)));
+        let gain = if filtered != 0 && energy != 0 {
+            let e1 = norm32(filtered);
+            let filtered = shl32(filtered, e1);
+            let e2 = norm32(energy);
+            let energy = shr32(shl32(energy, e2), 1);
+            let shift = sub16(6, add16(sub16(e1, e2), 1)).max(0);
+            let q = div32x16(energy, hi16(filtered));
+            isqrt(shr32(dep_hi(q), shift))
+        } else {
+            0x1000
+        };
+        for sample in y.iter_mut() {
+            let acc = mac32(
+                msu32(dep_hi(self.out_gain), self.out_gain, 0x0800),
+                gain,
+                0x0800,
+            );
+            self.out_gain = round16(acc);
+            let m = add16(self.out_gain, shr16(self.out_gain, 4));
+            *sample = round16(shl32(lmul(*sample, m), 4));
+        }
+    }
+}
+
+/// Adds the 11 comfort noise pulses of a 120-sample block to its adaptive
+/// excitation `e`, with the gain that brings the block to the target energy.
+fn add_noise_pulses(e: &mut [i16; 2 * SUBFRAME], pos: &[usize; 11], sign: &[i16; 11], target: i16) {
+    let max = e.iter().fold(0, |m, &x| m.max(abs16(x)));
+    let mut k = if max == 0 {
+        0
+    } else {
+        sub16(4, norm16(max)).max(-2)
+    };
+    let te = e.map(|x| shr16(x, k));
+    let eu = dot(&te, &te);
+    let cross = pos
+        .iter()
+        .zip(sign)
+        .fold(0, |acc, (&p, &s)| mac32(acc, te[p], s));
+    let ie = hi16(shl32(cross, 1));
+
+    let t = lo16(shr32(lmul(target, 60), 6));
+    let wanted = shr32(lmul(t, target), add16(shl16(k, 1), 4));
+    let c = mul32x16(sub32(eu, wanted), 2979);
+    let b0 = mul16r(ie, 2979);
+    let d = neg32(msu32(c, b0, b0));
+    let x = if d <= 0 {
+        neg16(b0)
+    } else {
+        let root = isqrt(d);
+        let x1 = sub16(root, b0);
+        let x2 = add16(b0, root);
+        if abs16(x2) < abs16(x1) {
+            neg16(x2)
+        } else {
+            x1
+        }
+    };
+    k = add16(k, 1);
+    let gain = shl16(x, k).clamp(-10000, 10000);
+    for (&p, &s) in pos.iter().zip(sign) {
+        e[p] = add16(e[p], mul16(gain, s));
+    }
+}
+
+/// SID gain value of a 6-bit SID gain index.
+fn sid_gain_decode(index: i16) -> i16 {
+    let segment = (index >> 4).min(2);
+    let i = index - 16 * segment;
+    let value = (i << (segment + 1)) + CNG_GAIN_SEGMENT_BASE[segment as usize];
+    value * 32
+}
+
+/// SID gain index nearest an excitation energy `energy` stored with its
+/// normalisation `shift`.
+fn sid_gain_quantize(energy: i16, shift: i16) -> i16 {
+    let s = sub16(16, shl16(shift, 1));
+    let x = mul32x16(shl32(i32::from(energy), s), 273);
+    if x >= CNG_GAIN_SEGMENT_BOUNDS[2] {
+        return 63;
+    }
+    let (segment, steps) = if x >= CNG_GAIN_SEGMENT_BOUNDS[1] {
+        (2, 4)
+    } else if x >= CNG_GAIN_SEGMENT_BOUNDS[0] {
+        (1, 3)
+    } else {
+        (0, 3)
+    };
+    let base = CNG_GAIN_SEGMENT_BASE[segment];
+    let level = |j: i16| base + (j << (segment + 1));
+
+    let mut j: i16 = 1 << steps;
+    let mut step = j / 2;
+    for _ in 0..steps {
+        let v = level(j);
+        if x >= lmul(v, v) {
+            j += step;
+        } else {
+            j -= step;
+        }
+        step /= 2;
+    }
+
+    let v = level(j);
+    let d = sub32(lmul(v, v), x);
+    let first = 16 * segment as i16;
+    if d <= 0 {
+        let v2 = level(j + 1);
+        let d2 = sub32(x, lmul(v2, v2));
+        if d > d2 {
+            first + j
+        } else {
+            first + j + 1
+        }
+    } else {
+        let v2 = level(j - 1);
+        let d2 = sub32(x, lmul(v2, v2));
+        if d < d2 {
+            first + j
+        } else {
+            first + j - 1
         }
     }
 }
@@ -1458,86 +1302,336 @@ impl G7231Decoder {
 mod tests {
     use super::*;
 
-    /// Small deterministic xorshift generator for the robustness tests.
-    struct Rng(u64);
-    impl Rng {
-        fn next(&mut self) -> u64 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            self.0
+    #[test]
+    fn sixteen_bit_primitives_floor_and_saturate() {
+        assert_eq!(add16(32000, 1000), i16::MAX);
+        assert_eq!(sub16(-32000, 1000), i16::MIN);
+        assert_eq!(neg16(i16::MIN), i16::MAX);
+        assert_eq!(abs16(i16::MIN), i16::MAX);
+        assert_eq!(mul16(-1, 1), -1);
+        assert_eq!(mul16(3, -16384), -2);
+        assert_eq!(mul16(i16::MIN, i16::MIN), i16::MAX);
+        assert_eq!(mul16r(3, -16384), -1);
+        assert_eq!(mul16r(i16::MIN, i16::MIN), i16::MAX);
+        assert_eq!(shl16(1, 15), i16::MAX);
+        assert_eq!(shl16(-1, 16), i16::MIN);
+        assert_eq!(shl16(0, 20), 0);
+        assert_eq!(shl16(-12, -2), -3);
+        assert_eq!(shr16(-3, 1), -2);
+        assert_eq!(shr16(-1, 20), -1);
+        assert_eq!(shr16(5, -2), 20);
+        assert_eq!(div16(1, 3), 10922);
+        assert_eq!(div16(7, 7), i16::MAX);
+        for (a, n) in [
+            (0i16, 0i16),
+            (-1, 15),
+            (1, 14),
+            (16384, 0),
+            (-32768, 0),
+            (-16385, 0),
+            (-16384, 1),
+        ] {
+            assert_eq!(norm16(a), n, "norm16({a})");
         }
     }
 
     #[test]
-    fn frame_sizes_by_type() {
-        assert_eq!(G7231Decoder::frame_size(0x00), 24);
-        assert_eq!(G7231Decoder::frame_size(0x01), 20);
-        assert_eq!(G7231Decoder::frame_size(0x02), 4);
-        assert_eq!(G7231Decoder::frame_size(0x03), 1);
-        assert_eq!(G7231Decoder::frame_size(0xfc), 24);
-        assert_eq!(G7231Decoder::frame_size(0xff), 1);
-    }
-
-    #[test]
-    fn short_packets_produce_nothing() {
-        let mut d = G7231Decoder::new();
-        assert!(d.decode_frame(&[]).is_empty());
-        assert!(d.decode_frame(&[0u8; 23]).is_empty());
-        assert!(d.decode_frame(&[1u8; 19]).is_empty());
-        assert!(d.decode_frame(&[2u8; 3]).is_empty());
-        assert_eq!(d.decode_frame(&[3u8]).len(), 240);
-        assert_eq!(d.decode_frame(&[2u8, 0, 0, 0]).len(), 240);
-        assert_eq!(d.decode_frame(&[1u8; 20]).len(), 240);
-        assert_eq!(d.decode_frame(&[0u8; 24]).len(), 240);
-    }
-
-    #[test]
-    fn untransmitted_from_reset_is_deterministic() {
-        let mut a = G7231Decoder::new();
-        let mut b = G7231Decoder::new();
-        for _ in 0..10 {
-            assert_eq!(a.decode_frame(&[3]), b.decode_frame(&[3]));
+    fn thirty_two_bit_primitives_floor_and_saturate() {
+        assert_eq!(lmul(i16::MIN, i16::MIN), i32::MAX);
+        assert_eq!(lmul(-3, 5), -30);
+        assert_eq!(mac32(i32::MAX - 1, 1, 1), i32::MAX);
+        assert_eq!(msu32(i32::MIN + 1, 1, 1), i32::MIN);
+        assert_eq!(neg32(i32::MIN), i32::MAX);
+        assert_eq!(abs32(i32::MIN), i32::MAX);
+        assert_eq!(shl32(1, 31), i32::MAX);
+        assert_eq!(shl32(-1, 40), i32::MIN);
+        assert_eq!(shr32(-5, 1), -3);
+        assert_eq!(shr32(-5, 40), -1);
+        assert_eq!(shr32(3, -2), 12);
+        assert_eq!(hi16(-1), -1);
+        assert_eq!(lo16(0x0001_8000), i16::MIN);
+        assert_eq!(round16(0x7fff), 0);
+        assert_eq!(round16(0x8000), 1);
+        assert_eq!(round16(i32::MAX), i16::MAX);
+        assert_eq!(round16(i32::MIN), i16::MIN);
+        for (x, n) in [(0, 0), (-1, 31), (1, 30), (1 << 30, 0), (i32::MIN, 0)] {
+            assert_eq!(norm32(x), n, "norm32({x})");
         }
-        b.decode_frame(&[0u8; 24]);
-        b.reset();
-        let mut c = G7231Decoder::new();
-        assert_eq!(b.decode_frame(&[2, 1, 2, 3]), c.decode_frame(&[2, 1, 2, 3]));
+        assert_eq!(mul32x16(0x0001_8000, 16384), 0xc000);
+        assert_eq!(mul32x16(-1, 16384), -1);
+        assert_eq!(mul32x16(i32::MAX, i16::MIN), -i32::MAX);
+        assert_eq!(div32x16(100, 1), 50);
+        assert_eq!(div32x16(65536, 1), i16::MAX);
     }
 
     #[test]
-    fn random_packets_never_panic() {
-        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
-        for postfilter in [true, false] {
-            let mut d = G7231Decoder::new();
-            d.set_postfilter(postfilter);
-            for n in 0..40_000u32 {
-                let len = (rng.next() % 30) as usize;
-                let mut pkt: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
-                // Bias towards well-formed sizes so every frame type is exercised.
-                if n % 2 == 0 && !pkt.is_empty() {
-                    pkt.truncate(G7231Decoder::frame_size(pkt[0]));
-                }
-                let out = d.decode_frame(&pkt);
-                assert!(out.is_empty() || out.len() == 240);
-                if n % 5000 == 0 {
-                    d.reset();
-                }
+    fn composite_routines() {
+        assert_eq!(isqrt(7), 0);
+        assert_eq!(isqrt(8), 2);
+        assert_eq!(isqrt(20000), 100);
+        assert_eq!(isqrt(20001), 100);
+        assert_eq!(isqrt(-5), 0);
+        assert_eq!(isqrt(i32::MAX), 32766);
+
+        let mut seed = 12345;
+        assert_eq!(rand16(&mut seed), 9476);
+        assert_eq!(rand16(&mut seed), 22055);
+        assert_eq!(seed, 22055);
+        let mut seed = 0;
+        assert_eq!(rand16(&mut seed), 259);
+
+        let mut v = [1i16, -2, 0];
+        assert_eq!(vnorm(&mut v), 10);
+        assert_eq!(v, [1024, -2048, 0]);
+        let mut zeros = [0i16; 4];
+        assert_eq!(vnorm(&mut zeros), -3);
+        assert_eq!(zeros, [0; 4]);
+    }
+
+    #[test]
+    fn frame_size_follows_the_type_bits() {
+        assert_eq!(frame_size(0x00), 24);
+        assert_eq!(frame_size(0xfd), 20);
+        assert_eq!(frame_size(0x02), 4);
+        assert_eq!(frame_size(0x07), 1);
+    }
+
+    /// Writes fields from their least significant bit up, like a frame.
+    struct BitWriter {
+        bits: Vec<u8>,
+    }
+
+    impl BitWriter {
+        fn new() -> Self {
+            Self { bits: Vec::new() }
+        }
+
+        fn put(&mut self, value: u32, width: usize) -> &mut Self {
+            self.bits
+                .extend((0..width).map(|t| ((value >> t) & 1) as u8));
+            self
+        }
+
+        fn bytes(&self, len: usize) -> Vec<u8> {
+            let mut out = vec![0u8; len];
+            for (i, &bit) in self.bits.iter().enumerate() {
+                out[i / 8] |= bit << (i % 8);
             }
+            out
         }
     }
 
-    #[test]
-    fn extreme_patterns_never_panic() {
-        let mut d = G7231Decoder::new();
-        for fill in [0x00u8, 0xff, 0x55, 0xaa, 0x7f, 0x80] {
-            for t in 0..4u8 {
-                let mut pkt = vec![fill; 24];
-                pkt[0] = (fill & !3) | t;
-                for _ in 0..50 {
-                    let _ = d.decode_frame(&pkt);
-                }
-            }
+    fn high_rate_frame(lag0_code: u32, gain0: u32) -> Vec<u8> {
+        let mut w = BitWriter::new();
+        w.put(0, 2).put(0x00ab_cdef, 24);
+        w.put(lag0_code, 7).put(2, 2).put(100, 7).put(3, 2);
+        for gain in [gain0, 0x123, 0x456, 0x789] {
+            w.put(gain, 12);
         }
+        w.put(0b0101, 4).put(1, 1);
+        w.put(21 * 90 + 41, 13);
+        w.put(0x1234, 16)
+            .put(0x0567, 14)
+            .put(0x89ab, 16)
+            .put(0x0cde, 14);
+        w.put(0b101010, 6)
+            .put(0b10101, 5)
+            .put(0b111111, 6)
+            .put(0, 5);
+        w.bytes(24)
+    }
+
+    #[test]
+    fn parse_reads_a_high_rate_frame() {
+        // Lag code 30 is under the 58 threshold for subframes 0 and 1: their
+        // gain code carries the pulse train bit at bit 11.
+        let frame = match parse(&high_rate_frame(30, 0x800 | (20 * 24 + 7))) {
+            Frame::Active(frame) => frame,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(frame.rate, Rate::High);
+        assert_eq!(frame.lsp, 0x00ab_cdef);
+        assert_eq!(frame.lag, [48, 118]);
+        assert_eq!(frame.delta, [1, 2, 1, 3]);
+        assert_eq!(frame.train, [true, false, false, false]);
+        assert_eq!(frame.acb_gain, [20, 0x123 / 24, 0x456 / 24, 0x789 / 24]);
+        assert_eq!(frame.fcb_gain, [7, 0x123 % 24, 0x456 % 24, 0x789 % 24]);
+        assert_eq!(frame.grid, [1, 0, 1, 0]);
+        assert_eq!(
+            frame.pos,
+            [
+                2 * 65536 + 0x1234,
+                3 * 16384 + 0x0567,
+                4 * 65536 + 0x89ab,
+                5 * 16384 + 0x0cde
+            ]
+        );
+        assert_eq!(frame.sign, [0b101010, 0b10101, 0b111111, 0]);
+    }
+
+    #[test]
+    fn parse_turns_forbidden_codes_into_bad_frames() {
+        assert!(matches!(parse(&high_rate_frame(123, 0)), Frame::Active(_)));
+        assert_eq!(parse(&high_rate_frame(124, 0)), Frame::Bad);
+        // 85-entry book under the threshold, 170-entry book above it.
+        assert_eq!(parse(&high_rate_frame(30, 85 * 24)), Frame::Bad);
+        assert!(matches!(
+            parse(&high_rate_frame(40, 169 * 24)),
+            Frame::Active(_)
+        ));
+        assert_eq!(parse(&high_rate_frame(40, 170 * 24)), Frame::Bad);
+    }
+
+    #[test]
+    fn parse_reads_low_rate_sid_and_untransmitted_frames() {
+        let mut w = BitWriter::new();
+        w.put(1, 2)
+            .put(0x0012_3456, 24)
+            .put(10, 7)
+            .put(0, 2)
+            .put(80, 7)
+            .put(1, 2);
+        for gain in [169 * 24, 5, 6, 7] {
+            w.put(gain, 12);
+        }
+        w.put(0b0011, 4);
+        for pos in [0xfff, 1, 2, 3] {
+            w.put(pos, 12);
+        }
+        w.put(1, 4).put(2, 4).put(4, 4).put(8, 4);
+        let frame = match parse(&w.bytes(20)) {
+            Frame::Active(frame) => frame,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(frame.rate, Rate::Low);
+        assert_eq!(frame.lag, [28, 98]);
+        assert_eq!(frame.train, [false; 4]);
+        assert_eq!(frame.acb_gain, [169, 0, 0, 0]);
+        assert_eq!(frame.grid, [1, 1, 0, 0]);
+        assert_eq!(frame.pos, [0xfff, 1, 2, 3]);
+        assert_eq!(frame.sign, [1, 2, 4, 8]);
+
+        let mut w = BitWriter::new();
+        w.put(2, 2).put(0x00fe_dcba, 24).put(45, 6);
+        assert_eq!(
+            parse(&w.bytes(4)),
+            Frame::Sid {
+                lsp: 0x00fe_dcba,
+                gain: 45
+            }
+        );
+        assert_eq!(parse(&[0xff]), Frame::Untransmitted);
+    }
+
+    #[test]
+    fn sid_gain_levels() {
+        for (index, gain) in [
+            (0, 0),
+            (1, 64),
+            (15, 960),
+            (16, 1024),
+            (31, 2944),
+            (32, 3072),
+            (63, 11008),
+        ] {
+            assert_eq!(sid_gain_decode(index), gain, "{index}");
+        }
+        // Silence quantizes to the lowest level, a loud frame to the top one.
+        assert_eq!(sid_gain_quantize(0, 0), 0);
+        assert_eq!(sid_gain_quantize(i16::MAX, -3), 63);
+    }
+
+    /// Three 6.3 kbit/s frames of tests/fixtures/dssds2/ds2/olympus-lp.ds2,
+    /// a 5.3 kbit/s frame, a SID frame, two untransmitted frames and the
+    /// first frame again.
+    const STREAM: &str = "448699040a0400000080005006f9d78384e3180900a8d552a0722008222e0091a2f301be\
+        443ed48370b19b77d9de1041981ead10201417d227147211e8d843be3b41e4ff108dde92c5f168a1925912\
+        d73296ef6f23614589c7aba5c30e0804500303448699040a0400000080005006f9d78384e3180900a8d552";
+
+    fn frames() -> Vec<Vec<u8>> {
+        let bytes: Vec<u8> = (0..STREAM.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&STREAM[i..i + 2], 16).unwrap())
+            .collect();
+        let mut frames = Vec::new();
+        let mut pos = 0;
+        while pos < bytes.len() {
+            let end = pos + frame_size(bytes[pos]);
+            frames.push(bytes[pos..end].to_vec());
+            pos = end;
+        }
+        frames
+    }
+
+    #[test]
+    fn decodes_a_short_stream() {
+        let frames = frames();
+        assert_eq!(
+            frames.iter().map(Vec::len).collect::<Vec<_>>(),
+            [24, 24, 24, 20, 4, 1, 1, 24]
+        );
+        let mut decoder = G7231Decoder::new();
+        let samples: Vec<i16> = frames
+            .iter()
+            .flat_map(|f| decoder.decode_frame(f))
+            .collect();
+        assert_eq!(samples.len(), 8 * FRAME_SAMPLES);
+        // FFmpeg's G.723.1 decoder gives the same samples.
+        let checksum: i64 = samples
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| (i as i64 + 1) * i64::from(s))
+            .sum();
+        assert_eq!(checksum, 768637);
+        assert_eq!(samples[720..724], [96, 131, 129, 126]);
+        let peak = |range: std::ops::Range<usize>| {
+            samples[range]
+                .iter()
+                .map(|s| s.unsigned_abs())
+                .max()
+                .unwrap()
+        };
+        assert_eq!(peak(960..1200), 22307);
+        assert_eq!(peak(1200..1920), 22067);
+    }
+
+    #[test]
+    fn decoder_state_carries_from_frame_to_frame() {
+        let frames = frames();
+        let mut first = G7231Decoder::new();
+        let mut second = G7231Decoder::new();
+        assert_eq!(
+            first.decode_frame(&frames[0]),
+            second.decode_frame(&frames[0])
+        );
+        assert_eq!(
+            first.decode_frame(&frames[1]),
+            second.decode_frame(&frames[1])
+        );
+        // A lost frame is concealed from the speech before it.
+        let concealed = first.decode_erased();
+        assert_ne!(concealed, [0; FRAME_SAMPLES]);
+        assert_ne!(concealed, second.decode_frame(&frames[2]));
+        // An empty frame is an erased one.
+        let mut empty = G7231Decoder::new();
+        let mut erased = G7231Decoder::new();
+        assert_eq!(
+            empty.decode_frame(&frames[0]),
+            erased.decode_frame(&frames[0])
+        );
+        assert_eq!(empty.decode_frame(&[]), erased.decode_erased());
+        // With no speech before it, concealment has nothing to repeat.
+        assert_eq!(G7231Decoder::new().decode_erased(), [0; FRAME_SAMPLES]);
+    }
+
+    #[test]
+    fn postfilter_switch_changes_the_output() {
+        let frames = frames();
+        let mut on = G7231Decoder::new();
+        let mut off = G7231Decoder::with_postfilter(false);
+        let a: Vec<i16> = frames.iter().flat_map(|f| on.decode_frame(f)).collect();
+        let b: Vec<i16> = frames.iter().flat_map(|f| off.decode_frame(f)).collect();
+        assert_eq!(a.len(), b.len());
+        assert_ne!(a, b);
     }
 }

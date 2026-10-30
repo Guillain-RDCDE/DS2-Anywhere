@@ -139,7 +139,7 @@ Input File
 [Decoder] ─── per-format CELP decoder
     |
     ├── SP: Q15 integer, port of FFmpeg's dss_sp.c (format 1 included)
-    ├── LP: G.723.1, port of FFmpeg's g723_1 decoder
+    ├── LP: G.723.1, clean-room, bit-exact against the ITU test vectors
     └── DS2 QP: f64, lattice synthesis, C(64,11) codebook, de-emphasis
     |
     v
