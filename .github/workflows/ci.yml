@@ -128,4 +128,9 @@ jobs:
             ffmpeg-upstream/fate/sample-qp.ds2 \
             ffmpeg-upstream/fate/paused-qp.ds2 \
             ffmpeg-upstream/fate/sample-dss-sp-paused.dss \
-            vendor/dss-codec/tests/fixtures/grundig_sample.dss
+            vendor/dss-codec/tests/fixtures/grundig_sample.dss \
+            vendor/dss-codec/tests/fixtures/olympus-lp.dss \
+            vendor/dss-codec/tests/fixtures/olympus-lp.ds2 \
+            vendor/dss-codec/tests/fixtures/olympus-sp-empty-lp.dss \
+            vendor/dss-codec/tests/fixtures/olympus-qp7-empty-lp.ds2 \
+            vendor/dss-codec/tests/fixtures/olympus-sp-empty-qp.ds2
