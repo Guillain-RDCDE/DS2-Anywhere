@@ -102,3 +102,46 @@ fn streaming_gives_the_same_samples() {
         assert_eq!(streamed, whole, "{path}");
     }
 }
+
+#[test]
+fn an_empty_block_of_another_format_does_not_decide_the_codec() {
+    // Olympus's R8 writes an empty block of another format in front of the
+    // audio. The codec is that of the first block with frames: before, the
+    // three files with an empty LP block were read as LP and came out as
+    // noise, and the fourth was refused. They are Patrick Domack's FATE
+    // samples of release n9.0.2c. The SP files give n9.0.2b's output on the
+    // same files with the empty block cut out.
+    check(
+        "tests/fixtures/olympus-sp-empty-lp.dss",
+        DssSp,
+        11000,
+        33000,
+        SP_EMPTY_LP,
+    );
+    check(
+        "tests/fixtures/olympus-sp-empty-lp.ds2",
+        Ds2Sp,
+        11000,
+        33000,
+        SP_EMPTY_LP,
+    );
+    // An empty QP block in front of SP audio: refused before.
+    check(
+        "tests/fixtures/olympus-sp-empty-qp.ds2",
+        Ds2Sp,
+        11000,
+        33000,
+        SP_EMPTY_LP,
+    );
+    // QP7 synthesis is the fork's: this is n9.0.2c's own output.
+    check(
+        "tests/fixtures/olympus-qp7-empty-lp.ds2",
+        Ds2Qp7,
+        16000,
+        48128,
+        QP7_EMPTY_LP,
+    );
+}
+
+const SP_EMPTY_LP: &str = "3d8aa19ac5c784407496224f8614fada4e66264efbf200cfc09b93de5ae513a5";
+const QP7_EMPTY_LP: &str = "4059dc28e4751f8c1d4a940a6cccc6c2ffaa7cecb03fb08db3111068b21f59e6";

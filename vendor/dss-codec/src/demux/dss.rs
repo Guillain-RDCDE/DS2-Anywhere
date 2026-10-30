@@ -86,18 +86,22 @@ pub fn dss_layout(data: &[u8]) -> Option<DssLayout> {
         let header_size = dss_header_size(data[0]);
         // Some recorders leave the header's codec field at 0xff (seen on real
         // SP dictations with 3, 8 and 19-block headers); the format byte of
-        // the first audio block still says what the frames are.
-        let codec = DssCodec::from_format_byte(*data.get(DSS_HEAD_OFFSET_ACODEC)?)
-            .or_else(|| DssCodec::from_block_format_byte(*data.get(header_size + 4)?))?;
+        // the first audio block with frames still says what the frames are.
+        // An empty block in front, of whatever format, says nothing.
+        let codec =
+            DssCodec::from_format_byte(*data.get(DSS_HEAD_OFFSET_ACODEC)?).or_else(|| {
+                DssCodec::from_block_format_byte(first_frames_format(data, header_size)?)
+            })?;
         return Some(DssLayout { header_size, codec });
     }
     let ds2 = data.len() >= 4
         && (data[1..4] == *b"ds2" || data[..4] == crate::crypto::ds2_encrypted::ENCRYPTED_MAGIC)
         && (1..=16).contains(&data[0]);
     if ds2 {
-        // DS2 leaves the DSS codec field unset; each block header states it.
+        // DS2 leaves the DSS codec field unset; each block header states it,
+        // and the first block with frames is the one that counts.
         let header_size = dss_header_size(data[0]);
-        let codec = DssCodec::from_format_byte(*data.get(header_size + 4)?)?;
+        let codec = DssCodec::from_format_byte(first_frames_format(data, header_size)?)?;
         return Some(DssLayout { header_size, codec });
     }
     if looks_like_headerless_dss(data) {
@@ -108,6 +112,14 @@ pub fn dss_layout(data: &[u8]) -> Option<DssLayout> {
         });
     }
     None
+}
+
+/// Format byte of the first audio block that states frames, or of the first
+/// block when none does. An empty block in front (Olympus's R8 writes one
+/// when a recording starts in another mode) must not decide the codec.
+fn first_frames_format(data: &[u8], header_size: usize) -> Option<u8> {
+    data.get(header_size + 4)?;
+    Some(crate::demux::ds2::detect_ds2_format_type(data, header_size))
 }
 
 /// Frames that start in an audio block: byte 2 when it is not 0, otherwise

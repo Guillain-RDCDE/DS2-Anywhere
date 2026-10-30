@@ -42,10 +42,16 @@ decodes every public test vector to the same samples. In it:
 - `src/codec/dss_sp.rs` is a port of FFmpeg's `dss_sp.c`, the synthesis that scores level
   with Olympus's 2007 DLL against the source audio, plus format 1. The earlier copy
   carried changes from the Q15 episode (chapter 16) that were never measured.
-- `src/codec/g723_1.rs` is a port of FFmpeg's G.723.1 decoder, for LP.
+- `src/codec/g723_1.rs` is our own clean-room G.723.1 decoder, for LP: MIT, written
+  from [`docs/g723-1/SPEC.md`](../docs/g723-1/SPEC.md), identical to the ITU test
+  vectors ([chapter 19](../docs/19-the-last-format.md)). The same file is in
+  [hirparak/dss-codec#26](https://github.com/hirparak/dss-codec/pull/26).
+- The codec of a file is that of its first audio block **with frames**: an empty
+  block of another format in front (Olympus's R8 writes one) does not decide it.
 - The old DS2 SP path (`ds2_sp.rs`, 12000 Hz) is gone: DS2 SP blocks are DSS blocks.
 
-Those ports keep FFmpeg's licence, LGPL-2.1-or-later ([NOTICE](../NOTICE)).
+The FFmpeg ports (`dss_sp.rs`, `demux/dss.rs`) keep FFmpeg's licence, LGPL-2.1-or-later
+([NOTICE](../NOTICE)).
 
 The Grundig codec (`dss-codec/src/{codec,demux,tables}/grundig*.rs`) is our own
 clean-room reimplementation, verified bit-exact against the vendor decoder — see

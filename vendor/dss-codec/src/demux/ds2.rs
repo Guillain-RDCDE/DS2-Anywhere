@@ -322,10 +322,11 @@ pub fn demux_ds2_qp(data: &[u8]) -> Result<Ds2QpPackets> {
         return Err(DecodeError::NotDs2(std::path::PathBuf::from("<bytes>")));
     }
     let header_size = ds2_header_size(data[0]);
-    let first = data
-        .get(header_size..header_size + DS2_BLOCK_HEADER_SIZE)
+    data.get(header_size..header_size + DS2_BLOCK_HEADER_SIZE)
         .ok_or_else(|| DecodeError::Truncated("DS2 audio block header".to_string()))?;
-    let format_type = first[4];
+    // The first block with frames says what the file is: an empty block of
+    // another format may come first.
+    let format_type = detect_ds2_format_type(data, header_size);
     if format_type != DS2_FORMAT_QP && format_type != DS2_FORMAT_QP7 {
         return Err(DecodeError::UnsupportedFormat(format_type));
     }
