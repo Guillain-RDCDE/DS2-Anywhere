@@ -1,0 +1,8 @@
+# name: lsp_band_layout
+# description: LSP split VQ layout: per band, (first LSP index, number of LSPs). Row b = band b
+# dimensions: 3 x 2 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 6
+0,3
+3,3
+6,4

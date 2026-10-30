@@ -68,11 +68,7 @@ A practical note if the transcript matters legally or medically: keep the origin
 
 ## When something goes wrong
 
-**"This is a DSS-LP file"** — your recording is a little older (an Olympus DS-4000, typically). Its audio is **G.723.1**, a published international standard rather than the proprietary codec. The web page cannot decode it, on purpose; any recent `ffmpeg` can:
-
-```bash
-ffmpeg -i recording.dss recording.wav
-```
+**An older recorder (DSS-LP)** — if your recording comes from an older Olympus, a DS-4000 typically, its audio is **G.723.1**, a published international standard. The page decodes it like any other file; the result plays at 8000 Hz, which is what those recorders captured.
 
 **"This file is encrypted"** — some DS2 files are, and you need the password the author set on the recorder. Enter it when prompted. There is no way around it and there should not be one.
 

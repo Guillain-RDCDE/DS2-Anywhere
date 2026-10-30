@@ -309,9 +309,7 @@ We state these plainly rather than let the results imply more than they support.
 
 **We use FFmpeg's codec tables, not vendor-extracted ones.** Earlier in this project we claimed those tables deviate by 1–5% from the vendor's and proposed compensating for it. That claim was made during the period when we were misdiagnosing the whole problem, and the present results — 0.999 correlation with FFmpeg's tables unchanged — indicate it was not the limiting factor, if it was ever real. We have not re-measured it. Treat any table-deviation figure in this project's earlier chapters as unverified.
 
-**Frame modes 3 and 5** (G.723.1 with silence-insertion frames) are routed to `ffmpeg` rather than handled natively, and we have exercised them on few files.
-
-**In-browser DSS LP** is deliberately unsupported: shipping a second codec into a page whose purpose is the codec nobody else could read is a poor trade. The page names the format and gives the `ffmpeg` command.
+**DSS LP (G.723.1)** is decoded natively, in the browser too, by our clean-room G.723.1 decoder, which is identical to the ITU test vectors ([chapter 19](19-the-last-format.md)). The LP samples we hold carry only 6.3 kbit/s frames; 5.3 kbit/s, SID and untransmitted frames inside LP blocks are read by their type bits, as the Recommendation sizes them, but no real recording has shown them to us.
 
 ---
 

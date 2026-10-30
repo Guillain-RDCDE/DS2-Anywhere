@@ -1,0 +1,6 @@
+# name: cng_gain_segment_bounds
+# description: CNG SID gain quantizer: squared-domain segment thresholds (32-bit)
+# dimensions: 1 x 3 (rows x columns), row-major
+# element type: int32 (signed)
+# count: 3
+2048,18432,231233

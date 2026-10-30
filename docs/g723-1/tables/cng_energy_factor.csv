@@ -1,0 +1,6 @@
+# name: cng_energy_factor
+# description: CNG energy scaling factors; the decoder uses only entry 0 (273). Entries 1..3 are encoder-only
+# dimensions: 1 x 4 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 4
+273,998,499,333

@@ -1,0 +1,6 @@
+# name: mpmlq_pulse_count
+# description: 6.3 kbit/s: number of pulses per subframe, subframes 0..3
+# dimensions: 1 x 4 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 4
+6,5,6,5

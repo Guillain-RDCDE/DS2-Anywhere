@@ -1,0 +1,6 @@
+# name: lsp_dc
+# description: LspDC: long-term mean (DC) LSP vector, Q15-like scale where 0x8000 would be pi
+# dimensions: 1 x 10 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 10
+3131,4721,7690,10806,13872,16495,19752,22260,25484,27718

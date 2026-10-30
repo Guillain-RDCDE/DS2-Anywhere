@@ -156,6 +156,9 @@ The work didn't stop at our own servers — it's being handed back to the tools 
   vector. [Chapter 18 →](../docs/18-scored-against-the-source.md)
 - **A public specification.** [The first one ever written](../docs/SPEC-grundig-dss-sp.md)
   for the Grundig DSS-SP codec, bit-exact — so nobody has to reverse-engineer it again.
+- **LP, in a clean room.** Older recorders write G.723.1. Our decoder for it is MIT,
+  written from [a published specification](../docs/g723-1/SPEC.md) without the ITU or
+  FFmpeg code, and identical to the ITU test vectors. [Chapter 19 →](../docs/19-the-last-format.md)
 - **Digital preservation.** A [PRONOM submission](../docs/preservation/PRONOM-submission.md)
   so archives and forensic tools can even *recognise* these files in the first place.
 - **DSS SP: the one we got wrong first, then got right.** Long recordings blew up into

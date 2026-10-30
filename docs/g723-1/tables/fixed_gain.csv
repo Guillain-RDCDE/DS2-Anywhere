@@ -1,0 +1,6 @@
+# name: fixed_gain
+# description: Fixed codebook gain levels (24 levels, ~3.2 dB steps), index 0..23
+# dimensions: 1 x 24 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 24
+1,2,3,4,6,9,13,18,26,38,55,80,115,166,240,348,502,726,1050,1517,2193,3170,4582,6623

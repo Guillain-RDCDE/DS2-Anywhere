@@ -1,0 +1,6 @@
+# name: pitch_postfilter_weight
+# description: Pitch postfilter gain weighting gamma_ltp: entry 0 = 6.3 kbit/s (0.1875 in Q15), entry 1 = 5.3 kbit/s (0.25 in Q15)
+# dimensions: 1 x 2 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 2
+6144,8192

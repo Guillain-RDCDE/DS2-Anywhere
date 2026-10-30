@@ -1,0 +1,6 @@
+# name: norm_multiplier
+# description: multiplier used by the vector normalisation routine, indexed by the 16-bit normalisation count n = 0..15: 2^n, except n = 15 which is 32767 (not 32768)
+# dimensions: 1 x 16
+# element type: int16 (signed)
+# count: 16
+1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384,32767

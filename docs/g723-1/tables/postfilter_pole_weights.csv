@@ -1,0 +1,6 @@
+# name: postfilter_pole_weights
+# description: Formant postfilter denominator weights: entry j ~ round(32768*0.75^(j+1)), j = 0..9 (entry 7 is 3281, one above the rounded value: use the listed values)
+# dimensions: 1 x 10 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 10
+24576,18432,13824,10368,7776,5832,4374,3281,2460,1845

@@ -1,0 +1,6 @@
+# name: cng_gain_segment_base
+# description: CNG SID gain quantizer: first decoded gain value of each segment
+# dimensions: 1 x 3 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 3
+0,32,96

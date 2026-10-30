@@ -1,0 +1,6 @@
+# name: postfilter_zero_weights
+# description: Formant postfilter numerator weights: entry j = round(32768*0.65^(j+1)), j = 0..9
+# dimensions: 1 x 10 (rows x columns), row-major
+# element type: int16 (signed)
+# count: 10
+21299,13844,8999,5849,3802,2471,1606,1044,679,441
