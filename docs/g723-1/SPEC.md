@@ -19,6 +19,16 @@ Reading order: section 0 (notation) and section 1 (arithmetic) first, they are u
 everywhere. Section 4 is the algorithm. Section 7 lists the traps that most often break
 bit-exactness.
 
+Corrections log:
+* **2026-10-30, correction 1 (negative LSP values).** Version 1 said in 4.3.2 that the
+  LSP values reaching the cosine lookup are always positive. That is false: the stability
+  step of 4.2 can leave an LSP below zero (see the new note after 4.2 step 5), and the
+  reference then indexes its 512-entry cosine table at a negative position, which is
+  undefined behaviour in the reference (an out-of-bounds read, no mask). The new rule is
+  given in 4.3.2 step 1. Changed: 4.2 (note added), 4.3.2 step 1, section 7 item 19,
+  section 8 cosine row. `tables/cosine.csv` is unchanged (512 entries, the same size as
+  the reference table).
+
 Validation: the decoder in DS2-Anywhere (`vendor/dss-codec/src/codec/g723_1.rs`) was
 written from this document, its tables and the Recommendation's text, by someone who
 never saw the reference source or any other G.723.1 implementation. It reproduces,
@@ -368,6 +378,26 @@ Output: LSP vector p[10] (int16).
 5. If after the 10th pass the vector is still unstable, p := R (the previous vector,
    unmodified). (No official test vector reaches this; see section 6.5.)
 
+**Range of the result (correction 2026-10-30).** The clamps of step 4a run only at the
+*start* of each pass, so step 4b of the same pass can undo them, and the vector accepted
+in step 4d (or returned in step 5) is not limited to [384, 32256]:
+* **Below zero.** In pass step 4b with j = 1, p[0] is lowered by floor(t/2), where
+  t = S + p[0] − p[1]. Starting from the clamped p[0] = 384 with S = 256, this makes p[0]
+  negative exactly when p[1] <= −130 before the step (in general: when
+  p[1] <= S − p[0] − 2 for the p[0] present at that moment). For j >= 2, p[j−1] is lowered
+  in the same way and can become negative if p[j] is far enough below it. A negative p[1]
+  comes from a strongly negative codebook entry plus the prediction term of step 3. If the
+  test of step 4c then passes, the negative values are accepted. A value that a later pass
+  pulls back up is clamped again only by that pass's step 4a. In step 5, p := R can also
+  return a negative vector inherited from an earlier frame.
+* **Above 32256.** For j = 9, step 4b can raise p[9] above 32256, at most to 32767
+  (add16 saturates). This is harmless: the cosine index is then at most 255, which reads
+  table entries 255 and 256, both inside the table.
+* Everything downstream receives these values unchanged: the interpolation of 4.3.1
+  (including SID and comfort-noise frames), the prediction term of the next frame, and
+  sid_lsp. All of these are well defined for any int16. The only place that cannot handle a
+  negative value is the cosine lookup (4.3.2 step 1).
+
 Recommendation: 2.6 and 3.10.1 (the prose's ∆min = 31.25 Hz corresponds to S = 256,
 62.5 Hz to 512; the prose does not mention the clamps of step 4a, the "−4" tolerance in the
 test of step 4c, nor the exact integer form of the averaging in 4b).
@@ -387,9 +417,28 @@ i = 3 it reproduces C exactly.)
 **4.3.2 Conversion** of one interpolated vector q[10] to LPC coefficients a[10]:
 
 1. Cosine lookup with linear interpolation, for k = 0..9:
-   j := shr16(q[k], 7) (q is positive, so j = q >> 7, 0..255);
+   j := shr16(q[k], 7) = floor(q[k] / 128), an arithmetic shift of the 16-bit value,
+   range −256..255;
    acc := dep_hi(cos[j]); δ := sub16(cos[j+1], cos[j]) where cos = `cosine` table;
-   f := add16(shl16(q[k] AND 0x7f, 8), 0x80);
+   f := add16(shl16(q[k] AND 0x7f, 8), 0x80), where q[k] AND 0x7f is taken on the 16-bit
+   two's-complement pattern, so it always equals q[k] mod 128 (0..127, also for negative
+   q[k]). Index and fraction are therefore consistent: q[k] = 128·j + (q[k] AND 0x7f).
+   **Negative q[k] (correction 2026-10-30).** The reference has no mask and no unsigned
+   conversion here. For q[k] < 0, j is negative (−1 for −128..−1), so it reads cos[j]
+   before the start of its 512-entry array (and cos[j+1] too when j <= −2). For j = −1,
+   cos[j+1] = cos[0] is the only in-range read. This is **undefined behaviour in the
+   reference**: the result depends on whatever data the compiler placed before the table,
+   so it cannot be pinned down without building and running it, and this was not done.
+   It is not known whether any official or extra test vector reaches it. The validation
+   decoder of this document happened to index the table periodically (the rule below),
+   and it matched every vector, so the vectors are at least consistent with this rule. **Rule to implement:** read the table periodically, cos[j] := cosine[j mod
+   512] with the non-negative remainder (−1 → 511, −2 → 510, ...), applied to both j and
+   j+1, and leave the fraction f as above. Because the table holds exactly one period of
+   the cosine, this is the natural continuation (cos(−x) = cos(x)). It is identical to an
+   index mask of 0x1ff, and to the 513-entry tables used elsewhere whose extra entry 512
+   equals entry 0 (16384); see the note below.
+   For q[k] >= 0, j is in 0..255 and both reads are inside the table: entry 256 at most,
+   reached for q >= 32640.
    acc := mac32(acc, δ, f); acc := shl32(acc, 1);
    c[k] := neg16(round16(acc)).
    (c[k] ≈ −2cos(ω_k) in Q14-ish scaling; just apply the operations.)
@@ -1022,6 +1071,9 @@ additional regression material.
     lag or gain code is handled exactly like an externally erased frame (including the
     first-SID-lost logic when the previous frame was comfort noise: then it becomes an
     untransmitted frame, keeping the old SID parameters).
+19. **LSP values can be negative** (or above 32256) after the stability step (4.2, range
+    note). The cosine lookup must then read the table periodically (index mod 512), as in
+    4.3.2 step 1 (correction 2026-10-30). Do not assume q >= 0 and do not clamp it.
 
 ---------------------------------------------------------------------------------------
 
@@ -1039,7 +1091,7 @@ int32 likewise.
 | lsp_vq_band0.csv | 256 x 3 | int16 | 4.2 |
 | lsp_vq_band1.csv | 256 x 3 | int16 | 4.2 |
 | lsp_vq_band2.csv | 256 x 4 | int16 | 4.2 |
-| cosine.csv | 512 x 1 | int16 | 4.3.2 (only entries 0..253 can be reached) |
+| cosine.csv | 512 x 1 | int16 | 4.3.2 (non-negative LSPs reach entries 0..256; negative LSPs are read periodically, see 4.3.2 step 1) |
 | postfilter_zero_weights.csv | 1 x 10 | int16 | 4.8.1 |
 | postfilter_pole_weights.csv | 1 x 10 | int16 | 4.8.1 |
 | mpmlq_pulse_count.csv | 1 x 4 | int16 | 4.5.1, 4.10.6 |
@@ -1063,3 +1115,9 @@ CNG clamp ±10000, CNG seed 12345, random generator 521 and 259, postfilter smoo
 tilt factor −16384 and mask 0xfffc, gain-unit constants 0x0800 and 4096, voicing shift 3,
 lag bounds 123 (largest valid 7-bit lag code), 58 (train / 85-table threshold), 142 (lag
 clamp in the classifier and pitch postfilter).
+
+Note on the size of the cosine table (correction 2026-10-30): the reference table has
+exactly 512 entries, one full period: entry k = round(16384·cos(2πk/512)), with
+entry 511 = 16383 and no entry 512. Some other implementations store 513 entries. Their
+extra entry 512 is 16384, which equals entry 0, so with the periodic rule of 4.3.2 they
+give the same results.
