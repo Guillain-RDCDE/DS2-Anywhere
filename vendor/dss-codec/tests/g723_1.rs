@@ -18,6 +18,8 @@
 //!   including 283 first-SID-lost frames, so the expected values below are
 //!   this decoder's output. FFmpeg's were ea82a7dc... (postfilter on) and
 //!   c067118a... (off).
+//! - `negative-lsp.g723pk`: 8 valid 6.3 kbit/s frames from Patrick Domack
+//!   that drive an LSP below zero; FFmpeg's output.
 
 use dss_codec::codec::g723_1::G7231Decoder;
 use sha2::{Digest, Sha256};
@@ -51,6 +53,7 @@ fn decode_sha(data: &[u8], postfilter: bool) -> (usize, String) {
 
 const OLYMPUS: &[u8] = include_bytes!("fixtures/olympus-lp.g723pk");
 const MIX: &[u8] = include_bytes!("fixtures/g723-mix.g723pk");
+const NEGATIVE_LSP: &[u8] = include_bytes!("fixtures/negative-lsp.g723pk");
 
 #[test]
 fn olympus_lp_matches_ffmpeg() {
@@ -103,4 +106,18 @@ fn a_new_decoder_restarts_identically() {
             .collect()
     };
     assert_eq!(decode(20), decode(20));
+}
+
+#[test]
+fn a_negative_lsp_decodes_like_ffmpeg() {
+    // Eight valid 6.3 kbit/s frames, sent by Patrick Domack, that pull the
+    // first LSP below zero. The decoder used to panic on them; it now reads
+    // the cosine table periodically and gives FFmpeg's output.
+    assert_eq!(
+        decode_sha(NEGATIVE_LSP, true),
+        (
+            1920,
+            "82868101ae24b80e98bfe048a8baa67c3e19eb4bdbb23ce6b02a3cc936813e87".into()
+        )
+    );
 }

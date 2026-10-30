@@ -72,6 +72,8 @@ vendor/dss-codec/tests/fixtures/
   shortpoetry_026_librivox, public domain), encoded with Olympus's ODMS R8
   encoder in SP, variable rate SP and LP. *.g723pk are the G.723.1 packets of
   the LP file, and synthetic packets, for the G.723.1 test.
+  negative-lsp.g723pk: eight G.723.1 frames he sent on DS2-Anywhere#9,
+  which once made the LP decoder panic.
   olympus-*-empty-lp.*, olympus-sp-empty-qp.ds2: four more of his FATE
   samples, from release n9.0.2c (an empty LP or QP block in front of the
   audio).

@@ -26,6 +26,12 @@ const PITCH_MEM_LEN: usize = MAX_PITCH + SUBFRAME_SIZE;
 const EXCITATION_PULSES: usize = 11;
 const FRAME_SIZE: usize = 56;
 const QP7_NOISE_FRAME_SIZE: usize = 12;
+/// C(64, 11): the number of ways to place 11 pulses among 64 samples. A
+/// 40-bit fixed-codebook index can be larger and then names no set of
+/// positions. Olympus's DssDecoder.dll 1.1.1.0 and Philips's PSPGRU.ACM
+/// clamp it to C(64, 11) - 1, which puts the pulses at 63 down to 53, and so
+/// do we. Real files carry such indices only in blocks that hold no speech.
+const QP_COMB_MAX: u64 = 743_595_781_824;
 const REFL_BIT_ALLOC: [u32; NUM_COEFFS] = [7, 7, 6, 6, 5, 5, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3];
 const QP7_LAST_REFL_BITS: u32 = 2;
 const QP7_NOISE_GAIN_BITS: u32 = 5;
@@ -134,7 +140,7 @@ impl Ds2QpDecoder {
                         pitch_gain: QP_PITCH_GAIN[pg_idx],
                         exc_gain: QP_EXCITATION_GAIN[eg_idx],
                         positions: decode_combinatorial_index(
-                            cb_index,
+                            cb_index.min(QP_COMB_MAX - 1),
                             SUBFRAME_SIZE,
                             EXCITATION_PULSES,
                         ),
