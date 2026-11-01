@@ -8,7 +8,9 @@
 /// (DssDecoder.dll from ODMS R8) frame for frame: frames re-anchor at every
 /// block, pause/stop blocks play the frames their byte 5 states, re-sync
 /// blocks drop the frame in flight, and a file that ends inside a frame keeps
-/// that frame zero-filled.
+/// that frame zero-filled. Block headers are read with the rules of the DSS
+/// block walk, Philips's pause blocks included.
+use crate::demux::dss::{block_start_bits, dss_block_frames};
 use crate::error::{DecodeError, Result};
 
 const DS2_BLOCK_SIZE: usize = 512;
@@ -61,22 +63,17 @@ pub(crate) fn ds2_header_size(first_byte: u8) -> usize {
     }) * DS2_BLOCK_SIZE
 }
 
-/// Frames that start in a block: byte 2 when it is not 0, otherwise byte 5
-/// unless that is 0xff. A recorder writes the second form where it pauses or
-/// stops, and Olympus's decoder plays those frames.
+/// Frames that start in a block: the rule of the DSS block walk.
 fn ds2_block_frames(hdr: &[u8]) -> usize {
-    if hdr[2] != 0 || hdr[5] == 0xff {
-        hdr[2] as usize
-    } else {
-        hdr[5] as usize
-    }
+    dss_block_frames(hdr)
 }
 
 /// Payload offset of the first frame that starts in a block, past the tail of
 /// a frame carried over from the previous block.
 fn ds2_block_anchor(hdr: &[u8]) -> usize {
-    let a = 2 * hdr[1] as isize + 2 * (hdr[0] >> 7) as isize - DS2_BLOCK_HEADER_SIZE as isize;
-    a.clamp(0, DS2_BLOCK_PAYLOAD_SIZE as isize) as usize
+    (block_start_bits(hdr) >> 3)
+        .saturating_sub(DS2_BLOCK_HEADER_SIZE)
+        .min(DS2_BLOCK_PAYLOAD_SIZE)
 }
 
 /// Frames that start in a block, from its header and the bytes of it the file
@@ -458,7 +455,8 @@ mod tests {
     fn make_ds2_file(mode: u8, frame_count: u8, payload_pattern: u8) -> Vec<u8> {
         let mut data = vec![0u8; DS2_HEADER_SIZE];
         data[..4].copy_from_slice(b"\x03ds2");
-        data.extend_from_slice(&block(0, 0, frame_count, mode, 0xff, payload_pattern));
+        // Byte 1 at 3: the first frame starts right after the header.
+        data.extend_from_slice(&block(0, 3, frame_count, mode, 0xff, payload_pattern));
         data
     }
 
@@ -515,6 +513,46 @@ mod tests {
         data[p + 12 + 1] = 0x80; // long frame
         let packets = demux_ds2_qp(&data).unwrap().packets;
         assert_eq!(packets.iter().map(Vec::len).collect::<Vec<_>>(), [12, 56]);
+    }
+
+    #[test]
+    fn test_ds2_block_anchor_reads_byte3_when_pointer_is_0() {
+        for (header, anchor) in [
+            ([0x0f, 0x05, 0x09, 0xff, 0x06, 0xff], 4),
+            ([0x0f, 0x05, 0x09, 0x40, 0x06, 0xff], 4),
+            ([0x01, 0x00, 0x00, 0xc0, 0x06, 0x09], 50),
+            ([0x00, 0x00, 0x00, 0x40, 0x06, 0x09], 2),
+            ([0x03, 0x00, 0x00, 0x28, 0x00, 0x0b], 95),
+            ([0x00, 0x00, 0x00, 0x00, 0x06, 0x09], 0),
+            ([0x00, 0x00, 0x00, 0x20, 0x06, 0x09], 0),
+            ([0x0f, 0xff, 0x00, 0xff, 0x06, 0xff], 504),
+        ] {
+            assert_eq!(ds2_block_anchor(&header), anchor, "{header:02x?}");
+        }
+    }
+
+    #[test]
+    fn test_ds2_qp_philips_pause_block_frames_at_its_pointer() {
+        // Frames run on from block 0 into the pause block, whose own frames
+        // start at the pointer in byte 0 and byte 3 (0x1e0 bits, byte 60,
+        // payload byte 54); the same file with the pointer in byte 1 gives
+        // the same frames.
+        let mut data = vec![0u8; DS2_HEADER_SIZE];
+        data[..4].copy_from_slice(b"\x03ds2");
+        data.extend_from_slice(&block(0, 3, 10, 6, 0xff, 0x10));
+        let mut pause = block(0, 0, 0, 6, 9, 0x20);
+        pause[..4].copy_from_slice(&[0x01, 0x00, 0x00, 0xe0]);
+        data.extend_from_slice(&pause);
+        data.extend_from_slice(&block(0, 3 + 26, 1, 6, 0xff, 0x30));
+        let packets = demux_ds2_qp(&data).unwrap().packets;
+        assert_eq!(packets.len(), 20);
+        let at = DS2_HEADER_SIZE + DS2_BLOCK_SIZE + DS2_BLOCK_HEADER_SIZE + 54;
+        assert_eq!(packets[10], data[at..at + DS2_QP_FRAME_SIZE].to_vec());
+
+        let mut olympus = data.clone();
+        let hdr = DS2_HEADER_SIZE + DS2_BLOCK_SIZE;
+        olympus[hdr..hdr + 6].copy_from_slice(&[0x00, 30, 9, 0xff, 6, 0xff]);
+        assert_eq!(demux_ds2_qp(&olympus).unwrap().packets, packets);
     }
 
     #[test]

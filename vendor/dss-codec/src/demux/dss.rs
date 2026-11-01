@@ -10,6 +10,9 @@
 ///   that frame, and how many frames start in it;
 /// - a block written at a pause or stop leaves byte 2 at 0 and puts the frame
 ///   count in byte 5, and those frames are played;
+/// - Philips also writes pause blocks whose bytes 0 and 1 leave the first
+///   frame's position at 0: it is then in the bottom half of byte 0 and in
+///   byte 3 (Patrick Domack's hirparak/dss-codec#28);
 /// - the byte a swapped frame takes from the frame before it is read from the
 ///   file, two bytes before the frame, rather than carried over, so a cut file
 ///   or a block that restarts the framing still decodes;
@@ -122,15 +125,39 @@ fn first_frames_format(data: &[u8], header_size: usize) -> Option<u8> {
     Some(crate::demux::ds2::detect_ds2_format_type(data, header_size))
 }
 
-/// Frames that start in an audio block: byte 2 when it is not 0, otherwise
-/// byte 5 unless that is 0xff. A recorder writes the second form where it
-/// pauses or stops, and Olympus's decoder plays those frames.
+/// Frames that start in an audio block: byte 2, or byte 5 when byte 2 is 0 or
+/// 0xff, and none when that is 0xff. A recorder writes the second form where
+/// it pauses or stops, and Olympus's and Philips's decoders play those frames.
+///
+/// Rules from Patrick Domack's hirparak/dss-codec#28.
 pub(crate) fn dss_block_frames(header: &[u8]) -> usize {
-    if header[2] != 0 || header[5] == 0xff {
-        header[2] as usize
+    let count = if header[2] != 0 && header[2] != 0xff {
+        header[2]
     } else {
-        header[5] as usize
+        header[5]
+    };
+    if count == 0xff {
+        0
+    } else {
+        count as usize
     }
+}
+
+/// Where the first frame that starts in a block starts, in bits from the
+/// start of the block: byte 1 and the top half of byte 0, or, where both are
+/// 0, the bottom half of byte 0 and byte 3. Philips writes that second form
+/// in some pause blocks (DPM 6000, 8000 and 9600, DSS-Lib), with byte 2 at 0
+/// and the frame count in byte 5. A frame starts on a whole byte, so the low
+/// 3 bits are dropped. Philips's SpeechExec readers and Olympus's R8 decoder
+/// read the pointer this way (Patrick Domack's hirparak/dss-codec#28).
+pub(crate) fn block_start_bits(header: &[u8]) -> usize {
+    let bits = usize::from(header[1]) << 4 | usize::from(header[0] >> 4);
+    let bits = if bits != 0 {
+        bits
+    } else {
+        usize::from(header[0] & 0x0f) << 8 | usize::from(header[3])
+    };
+    bits & !7
 }
 
 /// Un fichier DSS dont l'en-tete a ete perdu commence directement par ses blocs
@@ -242,9 +269,11 @@ impl<'a> Walk<'a> {
                 return false;
             };
 
-            self.swap = header[0] & 0x80 != 0;
-            let mut cont =
-                2 * header[1] as isize + 2 * self.swap as isize - DSS_BLOCK_HEADER_SIZE as isize;
+            // The first frame starts at block byte `start`; an odd start is a
+            // swapped frame, whose 16-bit word began one byte earlier.
+            let start_byte = (block_start_bits(header) >> 3) as isize;
+            self.swap = start_byte & 1 != 0;
+            let mut cont = start_byte + self.swap as isize - DSS_BLOCK_HEADER_SIZE as isize;
             if cont < 0 || cont > (DSS_BLOCK_SIZE - DSS_BLOCK_HEADER_SIZE) as isize {
                 cont = 0;
             }
@@ -511,6 +540,60 @@ mod tests {
             // A file split out by SpeechExec says 1 for its 3-block header.
             data[0] = 1;
             assert_eq!(dss_layout(&data).unwrap().header_size, 3 * DSS_BLOCK_SIZE);
+        }
+    }
+
+    #[test]
+    fn block_frames_read_byte5_when_byte2_is_0_or_ff() {
+        for (header, frames) in [
+            ([0x0f, 0x03, 0x0a, 0xff, 0x06, 0x07], 10),
+            ([0x01, 0x00, 0x00, 0xc0, 0x06, 0x09], 9),
+            ([0x0f, 0x03, 0xff, 0xff, 0x06, 0x09], 9),
+            ([0x0f, 0x03, 0xff, 0xff, 0x06, 0xff], 0),
+            ([0x0f, 0x03, 0x00, 0xff, 0x06, 0xff], 0),
+            ([0x0f, 0x03, 0x00, 0xff, 0x06, 0x00], 0),
+        ] {
+            assert_eq!(dss_block_frames(&header), frames, "{header:02x?}");
+        }
+    }
+
+    #[test]
+    fn block_start_reads_byte3_when_the_pointer_is_0() {
+        for (header, bits) in [
+            ([0x0f, 0x05, 0x09, 0xff, 0x06, 0xff], 80),
+            ([0x80, 0x17, 0x09, 0xff, 0x00, 0xff], 376),
+            ([0x01, 0x00, 0x00, 0xc0, 0x06, 0x09], 448),
+            ([0x01, 0x00, 0x00, 0x78, 0x00, 0x0b], 376),
+            ([0x03, 0x00, 0x00, 0x28, 0x00, 0x0b], 808),
+            ([0x00, 0x00, 0x00, 0x00, 0x06, 0x09], 0),
+            ([0x0f, 0xff, 0x00, 0xff, 0x06, 0xff], 4080),
+        ] {
+            assert_eq!(block_start_bits(&header), bits, "{header:02x?}");
+        }
+    }
+
+    #[test]
+    fn a_philips_pause_block_starts_at_its_pointer() {
+        // The pointer 0x170 bits (byte 46) and 0x178 (byte 47, swapped) in
+        // byte 0 and byte 3 give the frames of the Olympus header that points
+        // there in byte 1.
+        for (byte3, frames, swap, byte1) in [(0x70u8, 6u8, 0u8, 23u8), (0x78, 11, 1, 23)] {
+            let mut pause = block(0, 0, 0, frames, 0x30);
+            pause[..4].copy_from_slice(&[0x01, 0x00, 0x00, byte3]);
+            let philips = dss_file(0, &[block(0, 3, 0, 0xff, 0x20), pause]);
+            let olympus = dss_file(
+                0,
+                &[
+                    block(0, 3, 0, 0xff, 0x20),
+                    block(swap, byte1, frames, 0xff, 0x30),
+                ],
+            );
+            let expected = demux_dss_packets(&olympus, dss_layout(&olympus).unwrap());
+            assert_eq!(expected.len(), usize::from(frames));
+            assert_eq!(
+                demux_dss_packets(&philips, dss_layout(&philips).unwrap()),
+                expected
+            );
         }
     }
 
