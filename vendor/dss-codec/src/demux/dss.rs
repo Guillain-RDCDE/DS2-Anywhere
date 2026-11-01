@@ -13,6 +13,8 @@
 /// - Philips also writes pause blocks whose bytes 0 and 1 leave the first
 ///   frame's position at 0: it is then in the bottom half of byte 0 and in
 ///   byte 3 (Patrick Domack's hirparak/dss-codec#28);
+/// - an SP block that claims more than 13 frames is empty, as Philips's
+///   decoder takes it (also from #28);
 /// - the byte a swapped frame takes from the frame before it is read from the
 ///   file, two bytes before the frame, rather than carried over, so a cut file
 ///   or a block that restarts the framing still decodes;
@@ -125,9 +127,19 @@ fn first_frames_format(data: &[u8], header_size: usize) -> Option<u8> {
     Some(crate::demux::ds2::detect_ds2_format_type(data, header_size))
 }
 
+/// Most frames an SP or QP block can start: 41-byte SP frames can start at
+/// 13 places in its 506 bytes of payload, 56-byte QP frames at 10.
+const BLOCK_MAX_FRAMES: u8 = 13;
+
 /// Frames that start in an audio block: byte 2, or byte 5 when byte 2 is 0 or
 /// 0xff, and none when that is 0xff. A recorder writes the second form where
 /// it pauses or stops, and Olympus's and Philips's decoders play those frames.
+///
+/// A block that states more than 13 is empty, as Philips's decoder takes it:
+/// the Olympus DS-2600 writes such blocks, stating 19, at its splices, and
+/// their frames are random bits. Variable rate SP, LP and QP7 frames can be
+/// short enough for more to start in a block, so a block whose format counts
+/// (0xff in byte 3) and is 1, 2, 4 or 7 keeps its count.
 ///
 /// Rules from Patrick Domack's hirparak/dss-codec#28.
 pub(crate) fn dss_block_frames(header: &[u8]) -> usize {
@@ -136,7 +148,8 @@ pub(crate) fn dss_block_frames(header: &[u8]) -> usize {
     } else {
         header[5]
     };
-    if count == 0xff {
+    let short_frames = header[3] == 0xff && matches!(header[4], 1 | 2 | 4 | 7);
+    if count == 0xff || (count > BLOCK_MAX_FRAMES && !short_frames) {
         0
     } else {
         count as usize
@@ -488,8 +501,11 @@ mod tests {
 
     #[test]
     fn variable_rate_short_frames_are_nine_bytes() {
-        // All bytes 0: every type bit is clear, so every frame is short.
-        let data = dss_file(1, &[block(0, 3, 40, 0, 0x00)]);
+        // All bytes 0: every type bit is clear, so every frame is short. A
+        // variable rate block may state more than 13 frames.
+        let mut b = block(0, 3, 40, 0, 0x00);
+        b[4] = 1;
+        let data = dss_file(1, &[b]);
         let layout = dss_layout(&data).unwrap();
         assert_eq!(layout.codec, DssCodec::SpVariableRate);
         // 40 short frames take 360 bytes and fit in the block.
@@ -552,6 +568,30 @@ mod tests {
             ([0x0f, 0x03, 0xff, 0xff, 0x06, 0xff], 0),
             ([0x0f, 0x03, 0x00, 0xff, 0x06, 0xff], 0),
             ([0x0f, 0x03, 0x00, 0xff, 0x06, 0x00], 0),
+        ] {
+            assert_eq!(dss_block_frames(&header), frames, "{header:02x?}");
+        }
+    }
+
+    #[test]
+    fn sp_and_qp_blocks_over_13_frames_are_empty() {
+        for (header, frames) in [
+            ([0x0f, 0x04, 0x13, 0xff, 0x06, 0xff], 0),
+            ([0x0f, 0x03, 0x00, 0xff, 0x06, 0x13], 0),
+            ([0x0f, 0x03, 0x0e, 0xff, 0x00, 0xff], 0),
+            ([0x0f, 0x03, 0x0e, 0xff, 0x05, 0xff], 0),
+            ([0x0f, 0x03, 0x0d, 0xff, 0x06, 0xff], 13),
+            ([0x0f, 0x03, 0x0d, 0xff, 0x00, 0xff], 13),
+            ([0x0f, 0x0c, 0x1d, 0xff, 0x01, 0xff], 29),
+            ([0x0f, 0x03, 0x16, 0xff, 0x02, 0xff], 22),
+            ([0x0f, 0x03, 0x16, 0xff, 0x04, 0xff], 22),
+            ([0x0f, 0x04, 0x2a, 0xff, 0x07, 0xff], 42),
+            ([0x0f, 0x0c, 0x1d, 0x00, 0x01, 0xff], 0),
+            ([0x0f, 0x03, 0x16, 0x00, 0x02, 0xff], 0),
+            ([0x0f, 0x03, 0x16, 0x00, 0x04, 0xff], 0),
+            ([0x0f, 0x04, 0x2a, 0x00, 0x07, 0xff], 0),
+            ([0x01, 0x00, 0x00, 0xc0, 0x07, 0x13], 0),
+            ([0x0f, 0x04, 0x0d, 0x00, 0x06, 0xff], 13),
         ] {
             assert_eq!(dss_block_frames(&header), frames, "{header:02x?}");
         }

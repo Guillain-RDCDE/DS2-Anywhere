@@ -84,10 +84,13 @@ vendor/dss-codec/tests/fixtures/
   same release, whose block format changes partway (SP then QP, QP then
   QP7, QP7 then LP; written by R8's DssRawWriter), and his edits of them.
   olympus-qp-philips-pause.ds2, olympus-sp-philips-pause.dss,
-  olympus-sp-byte2-ff.dss: three more of his samples, from
-  hirparak/dss-codec#28: the first 700 frames of an R8 encode of
-  test01_20s.wav (voxserv audio_quality_testing_samples), QP or SP, with
-  block headers set to a Philips pause block and its neighbours.
+  olympus-sp-byte2-ff.dss, olympus-qp-count19.ds2,
+  olympus-qp-count19-byte3.ds2, olympus-sp-count19.dss: six more of his
+  samples, from hirparak/dss-codec#28: the first 700 frames of an R8 encode
+  of test01_20s.wav (voxserv audio_quality_testing_samples), QP or SP, with
+  block headers set to a Philips pause block and its neighbours, or to a
+  block claiming 19 frames as the Olympus DS-2600 writes at its splices.
+
 
 Software used but not redistributed here
 ----------------------------------------

@@ -32,12 +32,15 @@ fn paused_qp_matches_reference() {
     let buf = decode_fixture("paused-qp.ds2");
     assert_eq!(buf.native_rate, 16000);
     // Olympus R8 and the fork: pause-block frames played, padding skipped,
-    // the frame the file ends inside kept zero-filled. 335 of its subframes
-    // carry a fixed-codebook index of C(64,11) or more, clamped as R8 and
-    // Philips's codec do; the s16 output's md5 is 83bdf85ecd892238f954d5c2a1621e84,
-    // the same as Patrick Domack's fork with the clamp.
-    assert_eq!(buf.samples.len(), 92416);
-    assert_eq!(pcm_fnv1a(&buf.samples), 0x22f8_cb6d_c068_18a3);
+    // the frame the file ends inside kept zero-filled. Block 28 (0f 04 13 ff
+    // 06 ff) claims 19 frames, more than a QP block can start: it counts as
+    // empty, as Philips reads it, and its 9 frames are gone (92416 samples
+    // before). 323 of the subframes left carry a fixed-codebook index of
+    // C(64,11) or more, clamped as R8 and Philips's codec do; the s16 output's
+    // md5 is 294bb8fc3bb31ff141bc2aba74c15bac, the same as Patrick Domack's
+    // dss-codec (hirparak/dss-codec#28, commit d3d58c3).
+    assert_eq!(buf.samples.len(), 90112);
+    assert_eq!(pcm_fnv1a(&buf.samples), 0x326d_9d81_fae1_36cc);
 }
 
 #[test]

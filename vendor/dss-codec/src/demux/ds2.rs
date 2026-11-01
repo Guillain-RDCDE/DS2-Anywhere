@@ -9,7 +9,8 @@
 /// block, pause/stop blocks play the frames their byte 5 states, re-sync
 /// blocks drop the frame in flight, and a file that ends inside a frame keeps
 /// that frame zero-filled. Block headers are read with the rules of the DSS
-/// block walk, Philips's pause blocks included.
+/// block walk: Philips's pause blocks included, and QP blocks claiming more
+/// than 13 frames count as empty.
 use crate::demux::dss::{block_start_bits, dss_block_frames};
 use crate::error::{DecodeError, Result};
 
@@ -553,6 +554,31 @@ mod tests {
         let hdr = DS2_HEADER_SIZE + DS2_BLOCK_SIZE;
         olympus[hdr..hdr + 6].copy_from_slice(&[0x00, 30, 9, 0xff, 6, 0xff]);
         assert_eq!(demux_ds2_qp(&olympus).unwrap().packets, packets);
+    }
+
+    #[test]
+    fn test_ds2_qp_block_over_13_frames_is_empty() {
+        let mut data = vec![0u8; DS2_HEADER_SIZE];
+        data[..4].copy_from_slice(b"\x03ds2");
+        data.extend_from_slice(&block(0, 3, 10, 6, 0xff, 0x10));
+        data.extend_from_slice(&block(0, 3 + 27, 19, 6, 0xff, 0x20));
+        data.extend_from_slice(&block(0, 3 + 24, 1, 6, 0xff, 0x30));
+        let packets = demux_ds2_qp(&data).unwrap().packets;
+        // Block 0's last frame takes its tail from the first 54 bytes of block
+        // 1, which then counts as a block without frames; block 2 plays its
+        // one frame from its anchor.
+        assert_eq!(packets.len(), 11);
+        let tail = DS2_HEADER_SIZE + DS2_BLOCK_SIZE + DS2_BLOCK_HEADER_SIZE;
+        assert_eq!(packets[9][2..], data[tail..tail + 54]);
+        let at = DS2_HEADER_SIZE + 2 * DS2_BLOCK_SIZE + DS2_BLOCK_HEADER_SIZE + 48;
+        assert_eq!(packets[10], data[at..at + DS2_QP_FRAME_SIZE].to_vec());
+
+        // QP7 frames can be short: the same block keeps its count.
+        let mut qp7 = data.clone();
+        for b in 0..3 {
+            qp7[DS2_HEADER_SIZE + b * DS2_BLOCK_SIZE + 4] = 7;
+        }
+        assert!(demux_ds2_qp(&qp7).unwrap().packets.len() > packets.len());
     }
 
     #[test]

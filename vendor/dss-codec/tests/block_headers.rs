@@ -1,15 +1,19 @@
-//! Block headers that Olympus's own encodes never hold, from Patrick
-//! Domack's hirparak/dss-codec#28 (commit 8ae78ea), with his fixtures:
-//! Philips's pause blocks (DPM 6000, 8000 and 9600, DSS-Lib), where byte 2
-//! is 0, the frame count is in byte 5, and the first frame's bit offset is
-//! in the bottom half of byte 0 and in byte 3, where bytes 0 and 1 leave it
-//! at 0.
+//! Two block headers that Olympus's own encodes never hold, from Patrick
+//! Domack's hirparak/dss-codec#28 (commits 8ae78ea and d3d58c3), with his
+//! fixtures:
 //!
-//! The philips-pause files are the first 700 frames of an Olympus R8 encode
-//! of test01_20s.wav (voxserv audio_quality_testing_samples), with three
-//! block headers set to a pause block and its neighbours from real
-//! recordings; olympus-sp-byte2-ff.dss is an edit of the SP one (see
-//! NOTICE).
+//! - Philips's pause blocks (DPM 6000, 8000 and 9600, DSS-Lib): byte 2 is 0,
+//!   the frame count is in byte 5, and the first frame's bit offset is in the
+//!   bottom half of byte 0 and in byte 3, where bytes 0 and 1 leave it at 0;
+//! - blocks that claim more than 13 frames, as the Olympus DS-2600 writes at
+//!   its splices (0f 04 13 ff 06 ff), whose frames are random bits: an SP or
+//!   QP block holding them counts as empty, as Philips's decoder takes it.
+//!
+//! The philips-pause files and olympus-qp-count19.ds2 are the first 700
+//! frames of an Olympus R8 encode of test01_20s.wav (voxserv
+//! audio_quality_testing_samples), with three block headers set to a pause
+//! block and its neighbours from real recordings, or to a block claiming
+//! 19 frames; the other files are edits of those (see NOTICE).
 //!
 //! The QP files give the same samples as Patrick's dss-codec: the md5 of the
 //! s16 PCM, in each test, is the one his tests expect. The SP files, decoded
@@ -89,4 +93,37 @@ fn sp_philips_pause_block() {
 fn sp_byte2_ff_takes_the_count_from_byte5() {
     let data = fixture("olympus-sp-byte2-ff.dss");
     check(&data, AudioFormat::DssSp, 11000, 700 * SP_FRAME, SP_PAUSE);
+}
+
+/// QP, blocks 41 to 43: 0f 12 09 ff 06 ff, 0f 11 13 ff 06 ff, 0f 1b 09 ff 06 ff,
+/// as at a DS-2600 splice. The middle block claims 19 frames and holds 9:
+/// they are gone, 691 frames. md5 759432a0076049d6de39b96df4bf5cf9.
+const QP_COUNT19: &str = "221bf09caf2a4737dbae6d73d24fd0f0a692a776eeb061345e39fa132de42b6b";
+
+#[test]
+fn qp_block_claiming_19_frames_is_empty() {
+    let data = fixture("olympus-qp-count19.ds2");
+    check(&data, AudioFormat::Ds2Qp, 16000, 691 * QP_FRAME, QP_COUNT19);
+}
+
+/// The same file with 0 in byte 3 and 7 in byte 4 of block 42: its format
+/// does not count, so the limit applies all the same.
+#[test]
+fn qp_block_claiming_19_frames_without_a_format_is_empty() {
+    let data = fixture("olympus-qp-count19-byte3.ds2");
+    check(&data, AudioFormat::Ds2Qp, 16000, 691 * QP_FRAME, QP_COUNT19);
+}
+
+/// olympus-sp-philips-pause.dss with block 31 set to 0f 15 13 ff 00 ff: 19
+/// frames claimed, 12 held, none played. 688 frames.
+#[test]
+fn sp_block_claiming_19_frames_is_empty() {
+    let data = fixture("olympus-sp-count19.dss");
+    check(
+        &data,
+        AudioFormat::DssSp,
+        11000,
+        688 * SP_FRAME,
+        "397b78b20824b8e6a541f5c3a3626d8a732f0c55cd6309b600db21f0be9a09e6",
+    );
 }
