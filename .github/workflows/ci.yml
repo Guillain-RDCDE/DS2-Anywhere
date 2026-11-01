@@ -142,4 +142,10 @@ jobs:
             vendor/dss-codec/tests/fixtures/olympus-qp-qp7.ds2 \
             vendor/dss-codec/tests/fixtures/olympus-qp-qp7-format3.ds2 \
             vendor/dss-codec/tests/fixtures/olympus-qp7-lp.ds2 \
-            vendor/dss-codec/tests/fixtures/olympus-qp7-lp-empty109.ds2
+            vendor/dss-codec/tests/fixtures/olympus-qp7-lp-empty109.ds2 \
+            vendor/dss-codec/tests/fixtures/olympus-qp-philips-pause.ds2 \
+            vendor/dss-codec/tests/fixtures/olympus-sp-philips-pause.dss \
+            vendor/dss-codec/tests/fixtures/olympus-sp-byte2-ff.dss \
+            vendor/dss-codec/tests/fixtures/olympus-qp-count19.ds2 \
+            vendor/dss-codec/tests/fixtures/olympus-qp-count19-byte3.ds2 \
+            vendor/dss-codec/tests/fixtures/olympus-sp-count19.dss
