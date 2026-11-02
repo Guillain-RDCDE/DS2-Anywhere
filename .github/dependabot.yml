@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       github-actions:
         patterns: ["*"]
@@ -18,7 +18,7 @@ updates:
       - /vendor/dss-codec
       - /vendor/dss-codec-wasm
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       cargo:
         patterns: ["*"]
